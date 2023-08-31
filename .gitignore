@@ -2,7 +2,7 @@
 ET_Runs
 Experiments AA 
 Experiments KE
-#preprocessed_data_DNN
+preprocessed_data_DNN
 preprocessed_data_LR
 preprocessed_data_PINN
 
