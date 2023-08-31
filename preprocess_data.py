@@ -322,7 +322,7 @@ def create_features(alpha, signals, norm_params = None, y_norm_params = None):
     Y_norm, y_norm_params = z_score_normalize(Y, norm_params = y_norm_params)
     return X_norm, Y_norm, feature_names, norm_params, y_norm_params
 
-def load_data_set(data_stored = True, store_data = True, normalize_data_set = True, preprocessed_data_directory = "preprocessed_data", signals_type = 1):
+def load_data_set(norm_params_directory, data_stored = True, store_data = True, normalize_data_set = True, preprocessed_data_directory = "preprocessed_data", signals_type = 1):
     """ function utilizes the preprocess_data.py file for filtering, normalizing, and seperating data functions.
     The Shortreed model file is called to define predicted forces using the previously developed model for SRMD
     post processing. All files are either saved or loaded to storage space using a numpy file type. These file types are binary
@@ -383,16 +383,23 @@ def load_data_set(data_stored = True, store_data = True, normalize_data_set = Tr
         signals_test, signals_train_val, signals_train, signals_val, norm_params, index = test_train_split(signals, index = None, normalize = normalize_data_set)
         force_SRMD_test, _, _, _, _, _                                                  = test_train_split(force_SRMD, index = index, normalize = False)
 
-        if store_data:
-            #save variables to file to avoid computation time related to reloading
-            if not(os.path.exists(preprocessed_data_directory)):
-                os.mkdir(preprocessed_data_directory)
+        print(store_data)
+    if store_data:
+        #save variables to file to avoid computation time related to reloading
+        if not(os.path.exists(preprocessed_data_directory)):
+            os.mkdir(preprocessed_data_directory)
 
-            np.save(preprocessed_data_directory+'/signals_test.npy',signals_test)
-            np.save(preprocessed_data_directory+'/signals_train_val.npy',signals_train_val)
-            np.save(preprocessed_data_directory+'/signals_train.npy',signals_train)
-            np.save(preprocessed_data_directory+'/signals_val.npy',signals_val)
-            np.save(preprocessed_data_directory+'/norm_params.npy',norm_params)
-            np.save(preprocessed_data_directory+'/force_SRMD_test.npy',force_SRMD_test)
+        sep = '/'
+        stripped = norm_params_directory.split(sep, 1)[0]
+        if not(os.path.exists(stripped)):
+            os.mkdir(stripped)
+                
+        np.save(preprocessed_data_directory+'/signals_test.npy',signals_test)
+        np.save(preprocessed_data_directory+'/signals_train_val.npy',signals_train_val)
+        np.save(preprocessed_data_directory+'/signals_train.npy',signals_train)
+        np.save(preprocessed_data_directory+'/signals_val.npy',signals_val)
+        np.save(preprocessed_data_directory+'/norm_params.npy',norm_params)
+        np.save(preprocessed_data_directory+'/force_SRMD_test.npy',force_SRMD_test)
+        np.save(norm_params_directory, norm_params)
 
     return signals_test, signals_train_val, signals_train, signals_val, norm_params, force_SRMD_test
