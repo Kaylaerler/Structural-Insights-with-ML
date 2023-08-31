@@ -1,0 +1,16 @@
+# Test case with R2 testing score of 0.980 and averaged MSE of 0.092
+
+# represents the number of layers used as the length and the number of neurons per layer
+neurons_per_layer: [32, 64, 128, 256, 512, 256, 128, 64 ,32, 8] 
+
+# Type of non-linear activation function to be used for all layers
+activation: 'relu'
+
+# The learning rate to be used for training.
+learning_rate: 0.001
+
+# Number of training samples per batch to be passed to network
+batch_size: 512
+
+# Number of epochs to train the model
+num_epochs: 100

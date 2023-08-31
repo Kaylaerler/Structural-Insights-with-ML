@@ -1,0 +1,16 @@
+# Best test case 
+
+# represents the number of layers used as the length and the number of neurons per layer
+neurons_per_layer: [30, 50, 100, 300, 500, 200, 100, 50 ,30, 10] 
+
+# Type of non-linear activation function to be used for all layers
+activation: 'relu'
+
+# The learning rate to be used for training.
+learning_rate: 0.001
+
+# Number of training samples per batch to be passed to network
+batch_size: 500
+
+# Number of epochs to train the model
+num_epochs: 5

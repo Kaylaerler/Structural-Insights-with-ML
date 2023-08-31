@@ -1,0 +1,16 @@
+# Hyperparameter tuning configuration file
+
+# represents the number of layers used as the length and the number of neurons per layer
+neurons_per_layer: [[10, 10, 10], [10, 10, 10, 10, 10], [10, 10, 10, 10, 10, 10, 10], [10, 10, 10, 10, 10, 10, 10, 10, 10]]
+
+# Type of non-linear activation function to be used for all layers
+activation: ['relu', 'leaky_relu']
+
+# The learning rate to be used for training.
+learning_rate: [0.1, 0.01, 0.001]
+
+# Number of training samples per batch to be passed to network
+batch_size: [512, 1024, 2048]
+
+# Number of epochs to train the model
+num_epochs: [10, 100]
