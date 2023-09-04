@@ -1,0 +1,8 @@
+activation: relu
+batch_size: 2048
+learning_rate: 0.001
+neurons_per_layer:
+- 10
+- 10
+- 10
+num_epochs: 100

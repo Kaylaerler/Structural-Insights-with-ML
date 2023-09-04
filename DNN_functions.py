@@ -2,13 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
 from sklearn.model_selection import ParameterGrid
+import preprocess_data
 
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import torch
 import torch.nn as nn
 
-import os
 import csv
 import yaml
 
@@ -19,7 +19,7 @@ class DeepNeuralNetwork(nn.Module):
     """ Class that defines the neural network. This class is customizable in the sense that it takes input_size, output_size and
      hidden_neurons and activation function as input so basically one can customize the whole network based on these parameters.
 
-    Inputs:
+    Args:
         input_size                 - the number of input features you want to pass to the neural network.
                                      Example: 5
 
@@ -38,10 +38,12 @@ class DeepNeuralNetwork(nn.Module):
     Outputs: It will initialize a CustomDeepNeuralNetwork object for you
 
     """
-    def __init__(self, input_size, output_size, hidden_neurons, activation, dropout_prob = 0.2):
+    def __init__(self, input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob = 0.2):
         super().__init__()
-        layers = [input_size] + hidden_neurons + [output_size]
+        layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
+        layers = np.append(layers, output_size).astype(int)
         self.layers = []
+        print(layers)
 
         for i in range(len(layers)- 1):
             layer = nn.Linear(layers[i], layers[i+1])     # Creating the hidden layers from the array given as input
@@ -81,14 +83,15 @@ class DeepNeuralNetwork(nn.Module):
         else:
             raise ValueError(f"Invalid activation function: {name}")
 
-# Defining a custom dataset class according to how the signals are defined
 class DataPrep(Dataset):
     """
-        Initializes a custom dataset with input signals and target values.
-
-        Args:
-            data (numpy.ndarray): The dataset containing input signals and target values.
-        """
+    Class to prepare data for PyTorch model
+    
+    Args:
+        data (numpy.ndarray): Training data with input signals and target values.
+    
+    Outputs: It will initialize a DataPrep object for you
+    """
     def __init__(self, data):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if device.type == 'cuda':
@@ -117,12 +120,19 @@ def train_model(signals_train, criterion, hyperparameters, training_output = 2):
         training_output (int): default set to output training metrics at every epoch. Set to 2 if 
                                 loss plot is desired during the middle of training. Set to 3 if no 
                                 training metric output is desired.
+
+
+    Returns:
+        model: trained model
+        r2_train (float): R-squared value for train data
     """
-    hidden_neurons = hyperparameters['neurons_per_layer']
+    hidden_neurons = hyperparameters['hidden_neurons']
+    hidden_layers = hyperparameters['hidden_layers']
     activation = hyperparameters['activation']
     learning_rate = hyperparameters['learning_rate']
     batch_size = hyperparameters['batch_size']
     num_epochs = hyperparameters['num_epochs']
+    dropout_prob = hyperparameters['dropout_prob']
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if training_output != 3:
@@ -134,7 +144,7 @@ def train_model(signals_train, criterion, hyperparameters, training_output = 2):
 
     input_size = np.shape(signals_train)[1]-1
     output_size = 1
-    model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, activation)
+    model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     model.train()  # Set the model in training mode
     model.to(device)
@@ -184,11 +194,29 @@ def train_model(signals_train, criterion, hyperparameters, training_output = 2):
         print("Finished Training")
     return model, r2_train
 
-def test_model(model, signals_test, testing_output = 1):
+def test_model(model, signals_test, testing_output = 1, denorm = False, norm_params = None):
     """
-    evaluate model performance
-    
+    evaluate model performance on test data and return testing predictions and r2 score
+
+    Args:
+        model: trained model
+        signals_test (numpy.ndarray): Testing data with input signals and target values.
+        testing_output (int): default set to output testing metrics. Set to 2 if...
+        denorm (bool): default set to True. Set to False if no denormalization is desired.
+        norm_params (tuple): default set to None. Set to tuple of normalization parameters if denorm is desired.
+
+    Returns:
+        test_predictions (numpy.ndarray): Testing predictions
+        r2_test (float): R-squared value for test data   
     """     
+    if denorm == True:
+        u, sd = norm_params
+        if hasattr(u, "__len__"):
+            y_norm_params = (u[-1],sd[-1])
+        else:
+            y_norm_params = (u,sd)
+        signals_test = preprocess_data.z_score_normalize(signals_test, norm_params)
+
     # Prepare test data for evaluation
     test_features = signals_test[:, :-1]
     test_targets = signals_test[:, -1]  # Assuming the last column represents the target values
@@ -208,10 +236,27 @@ def test_model(model, signals_test, testing_output = 1):
     if testing_output == 1:
         print("R-squared value (test):", r2_test)
 
+    if denorm == True:
+        test_predictions = preprocess_data.z_score_normalize_inverse(test_predictions, y_norm_params)
+
     return test_predictions, r2_test
 
 
-def grid_search(param_grid, signals_train, signals_test, results = 'Results'):
+def grid_search(param_grid, signals_train, signals_test, saved_model_path, saved_hyper_path, hyper_grid_results):
+    """
+    Perform grid search on hyperparameters and save optimum hyperparameters to pyaml configurable file
+
+    Args:
+        param_grid (dict): dictionary of hyperparameters to search over
+        signals_train (numpy.ndarray): Training data with input signals and target values.
+        signals_test (numpy.ndarray): Testing data with input signals and target values.
+        saved_model_path (str): path to save optimum model
+        saved_hyper_path (str): path to save optimum hyperparameters
+        hyper_grid_results (str): path to save hyperparameter search to file with test scores
+
+    Returns:
+        None
+    """
     
      # Generate all possible combinations of hyperparameters
     param_combinations = list(ParameterGrid(param_grid))
@@ -229,28 +274,44 @@ def grid_search(param_grid, signals_train, signals_test, results = 'Results'):
     best_score_index = np.argmax(test_r2)
 
     # Save optimum hyperparameters to pyaml configurable file
-    yaml_file_path = results + "/best_hypers.yaml"
-    with open(yaml_file_path, "w") as yaml_file:
-        yaml.dump(param_combinations[best_score_index], yaml_file, default_flow_style=False)
+    tuned_parameters = param_combinations[best_score_index]
+    model, _ = train_model(signals_train, criterion, tuned_parameters, training_output = 3)
+    torch.save(model.state_dict(), saved_model_path)
+    yaml.dump(tuned_parameters, open(saved_hyper_path, 'w'))
 
     # save hyperparameter search to file with test scores
-    csv_file_path = results + "/hyperparameter_grid.csv"
     for i, entry in enumerate(param_combinations):
         entry["test_score"] = test_r2[i]
-
-    # Save data to CSV file
-    if not(os.path.exists(results)):
-        os.mkdir(results)
-    with open(csv_file_path, "w", newline="") as csvfile:
+    with open(hyper_grid_results, "w", newline="") as csvfile: # Save data to CSV file
         fieldnames = ['num_epochs', 'activation', 'neurons_per_layer', 'learning_rate', 'batch_size','test_score']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()  # Write header
         for entry in param_combinations:
             writer.writerow(entry)
 
-    print(f"Data saved to {csv_file_path}")
+    print(f"Data saved to {hyper_grid_results}")
     print("optimum hyperparameters found to be:")
     print(param_combinations[best_score_index])
     print(f'With an r2 test score of {test_r2[best_score_index]}')
 
-
+def initiate_saved_model(hyper_path, model_path, signals):
+    """
+    Load saved model and hyperparameters
+    
+    Args:
+        hyper_path (str): path to saved hyperparameters
+        model_path (str): path to saved model
+        signals (numpy.ndarray): Training data with input signals and target values. Used to determine input size of model.
+        
+    Returns:
+        model: trained model
+    """
+    hyperparameters = yaml.load(open(hyper_path, 'r'), Loader=yaml.SafeLoader)
+    input_size = np.shape(signals)[1]-1
+    output_size = 1
+    hidden_neurons = hyperparameters['hidden_neurons']
+    hidden_layers = hyperparameters['hidden_layers']
+    activation = hyperparameters['activation']
+    model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation)
+    model.load_state_dict(torch.load(model_path))
+    return model

@@ -1,13 +1,33 @@
 import numpy as np
 import os 
 import preprocess_data
+import DNN_functions
 import matplotlib.pyplot as plt
 import sklearn as skl
 import torch
 import ShortreedModel
 
 
-def test_scores(regression_type, model, model_params, signals_type = 1, norm_params = None, selected_feature_indices=None, alpha = 0):
+def test_scores(model, model_type, norm_params = None, selected_feature_indices=None, alpha = 0):
+    """
+    test_scores is a function that takes in a model and returns the MSE and MAE for each run in the testing data set.
+    These testing scores are normalized on a per run basis to understand the equivalent performance of the model accross
+    runs with varrying amplitudes. 
+
+    Inputs:
+    ----------
+    model : torch.nn.Module or tuple
+    
+    """        
+    if model_type == 'LR':
+        signals_type = 1
+    elif model_type == 'DNN':
+        signals_type = 2
+    elif model_type == 'PINN':
+        signals_type = 3
+    else:
+        signals_type = 5 
+
     MSE = []
     MSE_empirical = []
     MAE = []
@@ -26,29 +46,24 @@ def test_scores(regression_type, model, model_params, signals_type = 1, norm_par
             if "txt" in dir_list[j]:
                 file         = dir_list[j] # select desired file
                 f_ext        = dpath+file  # create full extension for chosen file
-                signals, _   = preprocess_data.signal_preprocessing(f_ext,dpath, file, signals_type = signals_type) # obtain preprocessed signals from the file extension needed for linear regression
-                features_SRMD, dt = preprocess_data.signal_preprocessing(f_ext, dpath, file, signals_type = 2)
+                signals, _   = preprocess_data.signal_preprocessing(f_ext, dpath, file, signals_type = signals_type) # obtain preprocessed signals from the file extension needed for linear regression
+                features_SRMD, dt = preprocess_data.signal_preprocessing(f_ext, dpath, file, signals_type = 4)
                 friction          = ShortreedModel.mach_frict(features_SRMD[:,1], features_SRMD[:,5], features_SRMD[:,4], 114)
                 empirical_prediction = ShortreedModel.Horizontal_Forces(friction, features_SRMD[:,1], features_SRMD[:,2], 114)
 
-                if regression_type == "sklearn":
-                    bias, params = model_params
+                if model_type == "LR":
+                    # use model paramaters that are in denormalized units to predict
+                    bias, params = model
                     X_exp_norm, _, _, x_norm_params, _ = preprocess_data.create_features(alpha, signals)
-                    X_exp = preprocess_data.z_score_normalize_inverse(X_exp_norm,x_norm_params)
+                    X_exp = preprocess_data.z_score_normalize_inverse(X_exp_norm, x_norm_params)
                     X_exp = X_exp[:,selected_feature_indices]
                     params = params.reshape(len(params), 1)
                     prediction = np.matmul(X_exp, params) + bias
                 else:
-                    u, sd = norm_params
-                    if hasattr(u, "__len__"):
-                        y_norm_params = (u[-1],sd[-1])
-                    else:
-                        y_norm_params = (u,sd)
-                    signals_norm, _ = preprocess_data.z_score_normalize(signals, norm_params)
-                    prediction_norm = model(torch.autograd.Variable(torch.from_numpy(signals_norm[:,0:-1])).to(torch.float32)).cpu().data.numpy()
-                    prediction = preprocess_data.z_score_normalize_inverse(prediction_norm,y_norm_params)
+                    prediction, _ = DNN_functions.test_model(model, signals, testing_output = 2, denorm = True, norm_params = norm_params)
                 
-                data[k] = prediction, empirical_prediction, signals, data_folds[i]+file
+                time = np.arange(0, len(signals[:,0]))*dt
+                data[k] = prediction, empirical_prediction, signals, time, data_folds[i]+file
                 k = k+1 
 
                 # scoring metrics
@@ -81,6 +96,29 @@ def plot_signals(signals, time):
         axs.grid()
 
 def plot_prediction(time, signals,empirical_prediction,prediction, run_name, model_name):
+    """
+    plot_prediction is a function that takes in the time, signals, empirical prediction, and model prediction and plots
+    the target and predictions for a given run.
+    
+    Args:
+    ----------
+    time : np.array
+        time vector
+    signals : np.array
+        signals from the run
+    empirical_prediction : np.array
+        prediction from the empirical model
+    prediction : np.array
+        prediction from the model
+    run_name : str
+        name of the run
+    model_name : str
+        name of the model being tested
+        
+    Returns:
+    ----------
+    plot of target and predictions for a given run
+    """
     # target and prediction plot
     plt.figure(figsize=(6,4))
     plt.plot(time, signals[:,-1], label = 'Target')
@@ -139,7 +177,28 @@ def lgmodel_denorm_params(bias, model_params, norm_params, y_norm_params, select
     a_real = model_params*sdy/sd
     return bias_real, a_real
    
-def model_per_run_scoring(MSE, Vx_Median, Ax_Median, MSE_empirical):
+def model_per_run_scoring(MSE, Vx_Median, Ax_Median, MSE_empirical, model_name):
+    """
+    model_per_run_scoring is a function that takes in MSE and MAE for each run in the testing data set and plots these scores
+    with median velocity and acceleration normalized so that the relative scale of each is indicated per run.
+        
+    Args:
+    ----------
+    MSE : list
+        Mean Squared Error for each run
+    Vx_Median : list
+        Median Horizontal Velocity for each run
+    Ax_Median : list
+        Median Horizontal Acceleration for each run
+    MSE_empirical : list
+        Mean Squared Error for each run for the empirical model
+    model_name : str
+        Name of the model being tested
+
+    Returns:
+    ----------
+    plot of MSE and MAE per run with median velocity and acceleration normalized
+    """
     run_number = np.arange(0,len(MSE))
     Vx_median = np.array(Vx_Median)
     Ax_median = np.array(Ax_Median)
@@ -149,7 +208,7 @@ def model_per_run_scoring(MSE, Vx_Median, Ax_Median, MSE_empirical):
     axs = ax
     axs.scatter(run_number, norm_Ax, marker = 'x', color = 'k', label = 'Normalized Median Acceleration')
     axs.scatter(run_number, norm_Vx, marker = 'o', color = 'r', label = 'Normalized Median Velocity')
-    axs.plot(run_number, MSE, label = 'Linear Regression Model', color = 'k')
+    axs.plot(run_number, MSE, label = model_name, color = 'k')
     axs.plot(run_number, MSE_empirical, label = 'Empirical Model', color = 'g')
     axs.set_xlabel('Run Number')
     axs.set_ylabel('MSE')

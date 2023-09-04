@@ -171,15 +171,18 @@ def signal_preprocessing(directory, dpath, file, signals_type = 1):
         vel_matrix[(centralized_points-1+i):,i] = velocity[0:(-centralized_points+1-i)].flatten()
     
     if signals_type == 1:
-        # used for standard models
-        features = np.concatenate((displacement,velocity, acceleration, OutriggerForce, np.sign(vx), force),axis = 1)
+        # used for linear regression models
+        features = np.concatenate((displacement, velocity, acceleration, Act_Force, OutriggerForce, force),axis = 1)
     elif signals_type == 2:
-        # used for empirical model
-        features = np.concatenate((displacement,velocity,acceleration,force,Compression,OutriggerMeanForce),axis = 1)
+        # used for DNN model
+        features = np.concatenate((displacement,velocity, acceleration, np.sign(vx), force),axis = 1)
     elif signals_type ==3:
-        # used for multiple displacements in order to predict velocity
+        # used for PINN model
         features = np.concatenate((disp_matrix,velocity,acceleration,Act_Force,OutriggerForce,force),axis = 1)
         features = features[centralized_points:-centralized_points, :]
+    elif signals_type == 4:
+        # used for empirical model
+        features = np.concatenate((displacement,velocity,acceleration,force,Compression,OutriggerMeanForce),axis = 1)
     else:
         # used for multiple displacements and multiple velocity in order to predict acceleration
         features = np.concatenate((disp_matrix,vel_matrix,acceleration,Act_Force,OutriggerForce,force),axis = 1)
@@ -322,7 +325,7 @@ def create_features(alpha, signals, norm_params = None, y_norm_params = None):
     Y_norm, y_norm_params = z_score_normalize(Y, norm_params = y_norm_params)
     return X_norm, Y_norm, feature_names, norm_params, y_norm_params
 
-def load_data_set(norm_params_directory, data_stored = True, store_data = True, normalize_data_set = True, preprocessed_data_directory = "preprocessed_data", signals_type = 1):
+def load_data_set(norm_params_directory, model_type, data_stored = True, store_data = True, normalize_data_set = True):
     """ function utilizes the preprocess_data.py file for filtering, normalizing, and seperating data functions.
     The Shortreed model file is called to define predicted forces using the previously developed model for SRMD
     post processing. All files are either saved or loaded to storage space using a numpy file type. These file types are binary
@@ -347,6 +350,16 @@ def load_data_set(norm_params_directory, data_stored = True, store_data = True, 
         norm_params       - tuple containing mean and std needed to inverse normalize
         force_SRMD_test   - numpy 1D array containing predicted forces using Shortreed empirical method
     """
+    preprocessed_data_directory = 'preprocessed_data_' + model_type         
+    if model_type == 'LR':
+        signals_type = 1
+    elif model_type == 'DNN':
+        signals_type = 2
+    elif model_type == 'PINN':
+        signals_type = 3
+    else:
+        signals_type = 5    
+                               
     if os.path.exists(preprocessed_data_directory) and data_stored:
         print("Loading Stored Data")
         signals_test      = np.load(preprocessed_data_directory+'/signals_test.npy')
@@ -374,7 +387,7 @@ def load_data_set(norm_params_directory, data_stored = True, store_data = True, 
                     file            = dir_list[j] # select desired file
                     f_ext           = dpath+file  # create full extension for chosen file
                     signals[k], _   = signal_preprocessing(f_ext,dpath, file, signals_type = signals_type) # obtain preprocessed signals from the file extension needed for linear regression
-                    signals_SRMD, _ = signal_preprocessing(f_ext,dpath, file, signals_type = 2)  # obtain features needed for Shortreed model
+                    signals_SRMD, _ = signal_preprocessing(f_ext,dpath, file, signals_type = 4)  # obtain features needed for Shortreed model
                     friction        = ShortreedModel.mach_frict(signals_SRMD[:,1], signals_SRMD[:,5], signals_SRMD[:,4],weight) # define Shortreed model friction force amplitude
                     force_SRMD[k]   = ShortreedModel.Horizontal_Forces(friction, signals_SRMD[:,1], signals_SRMD[:,2], weight) # defined Shortreed model predicted horizontal force
                     k = k+1
