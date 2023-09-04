@@ -5,6 +5,8 @@ Experiments KE
 preprocessed_data_DNN
 preprocessed_data_LR
 preprocessed_data_PINN
+test
+trial
 
 
 # Byte-compiled / optimized / DLL files
