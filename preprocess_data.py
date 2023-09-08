@@ -32,7 +32,7 @@ from scipy.fft import fft
 from scipy.signal import find_peaks
 import pickle
 
-def signal_preprocessing(directory, dpath, file, signals_type = 1):
+def signal_preprocessing(directory, dpath, file):
     
     ####   extract data  
     data_open    = open(directory) # open data and store data
@@ -70,21 +70,22 @@ def signal_preprocessing(directory, dpath, file, signals_type = 1):
     df = pd.DataFrame(list(zip(chan_label, chan_units)),index = info_head, columns =['Description', 'Units'])
     dt             = lines[4][25:]
     dt             = float(dt.strip())
-    disp_ref       = np.array(data[:][np.where(df["Description"] == "Long Reference")[0]])
-    disp_feedback  = np.array(data[:][np.where(df["Description"] == "Long Feedback")[0]])
-    force          = np.array(data[:][np.where(df["Description"] == "Long Force fbk")[0]])
-    Out_NE         = np.expand_dims(np.array(data[:][np.where(df["Description"] == "O-NE Force fbk")[0]]))
-    Out_SE         = np.expand_dims(np.array(data[:][np.where(df["Description"] == "O-SE Force fbk")[0]]))
-    Out_NW         = np.expand_dims(np.array(data[:][np.where(df["Description"] == "O-NW Force fbk")[0]]))
-    Out_SW         = np.expand_dims(np.array(data[:][np.where(df["Description"] == "O-SW Force fbk")[0]]))
-    V_NE           = np.expand_dims(np.array(data[:][np.where(df["Description"] == "V-NE Force fbk")[0]]))
-    V_SE           = np.expand_dims(np.array(data[:][np.where(df["Description"] == "V-SE Force fbk")[0]]))
-    V_NW           = np.expand_dims(np.array(data[:][np.where(df["Description"] == "V-NW Force fbk")[0]]))
-    V_SW           = np.expand_dims(np.array(data[:][np.where(df["Description"] == "V-SW Force fbk")[0]]))
-    Compression    = np.array(data[:][np.where(df["Description"] == "Compression Force fbk")[0]])
+    signal_labels = ["Long Reference", "Long Feedback", 
+                     "O-NE Force fbk", "O-SE Force fbk", "O-NW Force fbk", "O-SW Force fbk", 
+                     "V-NE Force fbk", "V-SE Force fbk", "V-NW Force fbk", "V-SW Force fbk",
+                     "Compression Force fbk", "Long Force fbk"]
+    all_signals = np.array([])
+    for i in range(len(signal_labels)):
+        new_column = data[:][np.where(df["Description"] == signal_labels[i])[0]]
+            # Add the new column to the existing array
+        if all_signals.size == 0:
+            all_signals = new_column   # If it's the first column, assign it directly
+        else:
+            all_signals = np.vstack((all_signals, new_column))
+
 
     Fs          = 1/dt         # sampling frequency [Hz]
-    disp_FFT    = abs(np.fft.fftshift(fft(disp_ref)))/len(disp_ref)*2     # centered fft displacement feedback signal
+    disp_FFT    = abs(np.fft.fftshift(fft(all_signals[0,:])))/len(all_signals[0,:])*2     # centered fft displacement feedback signal
     f           = np.linspace(-Fs/2,Fs/2,len(disp_FFT)+1)
     f           = f[0:len(disp_FFT)]
     indices     = find_peaks(disp_FFT)[0] # get peak of FFT
@@ -111,31 +112,88 @@ def signal_preprocessing(directory, dpath, file, signals_type = 1):
 
     # apply sgolay filters to derive velocity and acceleration
     window_length   = 65
-    velocity        = savgol_filter(disp_feedback, window_length = window_length, polyorder = 2, deriv = 1, delta = dt) #[in/s]
-    g               = 386.4  #[in/s^2]
-    ax_filt_sgolay  = savgol_filter(disp_feedback, window_length = window_length, polyorder = 2, deriv = 2, delta = dt)/g #[g]
+    velocity        = savgol_filter(all_signals[1,:], window_length = window_length, polyorder = 2, deriv = 1, delta = dt) #[in/s]
+    min_velocity = max(0.001*np.max(velocity),0.002)
+    velocity[np.abs(velocity)<min_velocity] = 0
     
     # Use firwin with a Kaiser window to create a lowpass FIR filter.
+    g               = 386.4  #[in/s^2]
+    ax_filt_sgolay  = savgol_filter(all_signals[1,:], window_length = window_length, polyorder = 2, deriv = 2, delta = dt)/g #[g]
     wp              = fc/(Fs/2)    # Normalized passband edge frequency w.r.t. Nyquist rate
     b_filt          = signal.firwin(numtaps=200, cutoff=wp, window='hamming', pass_zero="lowpass")
-    ax_filt         = signal.filtfilt(b_filt, 1, ax_filt_sgolay)
+    acceleration    = signal.filtfilt(b_filt, 1, ax_filt_sgolay)
 
-    # Remove begining and end of signals as they are prone to spurious regions 
-    first_point     = 65
-    last_point      = -65
-    displacement    = np.expand_dims(disp_feedback[first_point:last_point],1)
-    vx              = np.expand_dims(velocity[first_point:last_point],1)
-    acceleration    = np.expand_dims(ax_filt[first_point:last_point],1)
-    force           = np.expand_dims(force[first_point:last_point],1)
-    Compression     = np.expand_dims(Compression[first_point:last_point],1)
-    OutriggerForces = np.concatenate((Out_NE,Out_SE,Out_NW,Out_SW),axis = 1)
-    Act_Total_Force = np.mean((V_NE,V_SE,V_NW,V_SW),axis = 0)
-    min_velocity = max(0.001*np.max(vx),0.002)
-    vx[np.abs(vx)<min_velocity] = 0
-    Act_Force       = Act_Total_Force[first_point:last_point]
+    # Concatenate signals desired for models
+    OutriggerMeanForce  = np.mean(all_signals[2:6], axis = 0)
+    OutriggerTotalForce = np.sum(np.abs(all_signals[2:6]), axis = 0)
+    ActuatorForce       = np.sum(all_signals[7:11], axis = 0)
+    time = np.arange(0,len(ActuatorForce))*dt
 
-    features = np.concatenate((displacement, vx, acceleration, Act_Force, OutriggerForces, Compression, force), axis = 1)
-    return features, dt
+    #   0         1           2               3             4                      
+    # time, displacement, velocity, accceleration, Outrigger total force, 
+    #          5                   6                 7                 8
+    # Actuator force, Outrigger mean force,  compression force, horizontal force
+    signals = np.vstack((time, all_signals[1,:], velocity.T, acceleration.T, 
+                         OutriggerTotalForce.T, ActuatorForce, OutriggerMeanForce.T, 
+                         all_signals[-2], all_signals[-1]))
+    
+    labels = {}
+    names  = ['Time', 'Displacement', 'Velocity', 'Acceleration', 
+             'Outrigger Total Force', 'Actuator Force', 'Outrigger Mean Force', 
+             'Compression Force', 'Horizontal Force']
+    units = [' [s]', ' [in]', ' [in/s]',' [g]', ' [tons]', ' [tons]',' [tons]', ' [tons]',' [tons]']
+    for i in range(signals.shape[0]):
+        labels[i] = {'name': names[i], 'units': units[i]}
+    return signals.T, labels
+
+def ETdata_to_library(saved_data_directory):
+    """ 
+    """                        
+    signals_library = {} # initialize feature library
+    if environment == 'local':
+        Mpath      = os.getcwd()
+    else:
+        Mpath = "/content/gdrive/MyDrive/structural"
+    Mdata_fold = '/ET_Runs/'             # folder containing data
+    data_folds = ['dataW/','dataK/','dataH2/','dataH1/','data3/','data2/','data1/'] # subfolders containing data from testing routines
+    k          = 0                       # instantiate index for examples
+    for i in range(len(data_folds)):     # cycle through all data folders
+        dpath      = Mpath + Mdata_fold + data_folds[i] # initial path to get directory list of files contained within
+        dir_list   = os.listdir(dpath)   # files within testing routine
+        for j in range(len(dir_list)):   # cycle through all files in the folders
+            if "txt" in dir_list[j]:
+                file       = dir_list[j] # select desired file
+                f_ext      = dpath+file  # create full extension for chosen file
+                # obtain preprocessed signals from the file extension needed for linear regression
+                signals, labels = signal_preprocessing(f_ext, dpath, file)
+                signals_library[k] = {'data' : signals, 'test' : data_folds[i]+file, 'labels': labels} 
+                k = k+1    
+    signal_file = saved_data_directory + '/signals_data.pkl'
+    with open(signal_file, 'wb') as fp:
+        pickle.dump(signals_library, fp)
+        print('dictionary saved successfully to file:', saved_data_directory)
+    return signals_library
+
+def library_to_numpy(signals_library):
+    """
+    """
+    signals_numpy = signals_library[0]['data']
+    for i in range(1,len(signals_library)):
+        signals_numpy = np.append(signals_numpy, signals_library[i]['data'], axis = 0)
+    return signals_numpy
+
+def load_data_set(preprocessed_data_directory, load = True):
+    """ 
+    """   
+    if not os.path.exists(preprocessed_data_directory):
+        os.mkdir(preprocessed_data_directory)
+    if os.path.exists(preprocessed_data_directory +'/signals_data.pkl') and load:
+        print("Loading Stored Data")
+        signals_library = np.load(preprocessed_data_directory+'/signals_data.pkl', allow_pickle = True)
+    else:
+        print("Extracting Data from Individual Folders")
+        signals_library = ETdata_to_library(preprocessed_data_directory)
+    return signals_library
 
 def z_score_normalize(X, norm_params = None, treat_disp_different = False):
     """
@@ -198,55 +256,3 @@ def z_score_normalize_inverse(X, norm_params):
     """
     u, sd = norm_params
     return X*sd+u
-
-def library_to_numpy(signals_library):
-    """
-    """
-    reordered_signals_library = signals_library
-    signals_numpy = reordered_signals_library[0]
-    for i in range(0,len(reordered_signals_library)-1):
-        signals_numpy = np.append(signals_numpy, reordered_signals_library[i], axis = 0)
-    return signals_numpy
-
-def ETdata_to_library(saved_data_directory):
-    """ 
-    """                        
-    signals    = {} # initialize feature library
-    signals_name = {}
-    if environment == 'local':
-        Mpath      = os.getcwd()
-    else:
-        Mpath = "/content/gdrive/MyDrive/structural"
-    Mdata_fold = '/ET_Runs/'             # folder containing data
-    data_folds = ['dataW/','dataK/','dataH2/','dataH1/','data3/','data2/','data1/'] # subfolders containing data from testing routines
-    k          = 0                       # instantiate index for examples
-    for i in range(len(data_folds)):     # cycle through all data folders
-        dpath      = Mpath + Mdata_fold + data_folds[i] # initial path to get directory list of files contained within
-        dir_list   = os.listdir(dpath)   # files within testing routine
-        for j in range(len(dir_list)):   # cycle through all files in the folders
-            if "txt" in dir_list[j]:
-                file            = dir_list[j] # select desired file
-                f_ext           = dpath+file  # create full extension for chosen file
-                signals[k], _   = signal_preprocessing(f_ext, dpath, file) # obtain preprocessed signals from the file extension needed for linear regression
-                signals_name[k]  = data_folds[i]+file
-                k = k+1
-                
-    signal_file = saved_data_directory + '/signals_data.pkl'
-    signals_name_file = saved_data_directory + '/signals_name.pkl'
-    with open(signal_file, 'wb') as fp:
-        pickle.dump(signals, fp)
-        print('dictionary saved successfully to file:', saved_data_directory)
-    with open(signals_name_file, 'wb') as fp:
-        pickle.dump(signals_name, fp)
-    return signals
-
-def load_data_set(preprocessed_data_directory):
-    """ 
-    """                                
-    if os.path.exists(preprocessed_data_directory):
-        print("Loading Stored Data")
-        signals = np.load(preprocessed_data_directory)
-    else:
-        print("Extracting Data from Individual Folders")
-        signals = ETdata_to_library(preprocessed_data_directory)
-    return signals

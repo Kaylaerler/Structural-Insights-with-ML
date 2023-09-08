@@ -1,18 +1,36 @@
+import csv
+import yaml
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
 from sklearn.model_selection import ParameterGrid
-import preprocess_data
+from sklearn.model_selection import train_test_split
+import pickle
 
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import torch
 import torch.nn as nn
-
-import csv
-import yaml
-
 from torchinfo import summary
+
+import preprocess_data
+
+def create_features(signals):
+    """  
+    Inputs:
+        signals - displacement, velocity, acceleration, force columns  
+
+    Outputs:
+        
+    """
+    ux  = signals[:,1]
+    vx  = signals[:,2]
+    ax  = signals[:,3]
+    signvx = np.sign(vx)
+    Y   = signals[:,-1]
+    
+    signals_out = np.vstack((ux, vx, ax, signvx, Y)).T
+    return signals_out
 
 
 class DeepNeuralNetwork(nn.Module):
@@ -43,7 +61,6 @@ class DeepNeuralNetwork(nn.Module):
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
         self.layers = []
-        print(layers)
 
         for i in range(len(layers)- 1):
             layer = nn.Linear(layers[i], layers[i+1])     # Creating the hidden layers from the array given as input
@@ -92,14 +109,14 @@ class DataPrep(Dataset):
     
     Outputs: It will initialize a DataPrep object for you
     """
-    def __init__(self, data):
+    def __init__(self, X, y):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         if device.type == 'cuda':
-            self.inputs = torch.tensor(data[:, :-1], dtype=torch.float32).cuda()  # Load inputs as a tensor and move to CUDA
-            self.targets = torch.tensor(data[:, -1], dtype=torch.float32).cuda()  # Load targets as a tensor and move to CUDA
+            self.inputs = torch.tensor(X, dtype=torch.float32).cuda()  # Load inputs as a tensor and move to CUDA
+            self.targets = torch.tensor(y, dtype=torch.float32).cuda()  # Load targets as a tensor and move to CUDA
         else:
-            self.inputs = torch.tensor(data[:, :-1], dtype=torch.float32)  # Load inputs as a tensor and move to CUDA
-            self.targets = torch.tensor(data[:, -1], dtype=torch.float32)
+            self.inputs = torch.tensor(X, dtype=torch.float32)  # Load inputs as a tensor and move to CUDA
+            self.targets = torch.tensor(y, dtype=torch.float32)
 
     def __len__(self):
         return len(self.targets)
@@ -108,8 +125,33 @@ class DataPrep(Dataset):
         x = self.inputs[index]
         y = self.targets[index]
         return x, y
+    
+def test_model(model, X_test, y_test = None):
+    """
+    evaluate model performance on test data and return testing predictions and r2 score
 
-def train_model(signals_train, criterion, hyperparameters, training_output = 2):
+    Args:
+        model: trained model
+        signals_test (numpy.ndarray): Testing data with input signals and target values.
+        testing_output (int): default set to output testing metrics. Set to 2 if...
+        denorm (bool): default set to True. Set to False if no denormalization is desired.
+        norm_params (tuple): default set to None. Set to tuple of normalization parameters if denorm is desired.
+
+    Returns:
+        test_predictions (numpy.ndarray): Testing predictions
+        r2_test (float): R-squared value for test data   
+    """     
+    test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    with torch.no_grad():
+        test_predictions = model(test_tensor)
+    test_predictions = test_predictions.numpy()
+    if y_test is None:
+       r2_test = None
+    else:
+        r2_test = r2_score(y_test, test_predictions)
+    return test_predictions, r2_test
+
+def train_model(signals_library, hyperparameters, path_names, training_output = 2):
     """
     Trains a PyTorch model using the given data, criterion, and optimizer.
 
@@ -134,29 +176,39 @@ def train_model(signals_train, criterion, hyperparameters, training_output = 2):
     num_epochs = hyperparameters['num_epochs']
     dropout_prob = hyperparameters['dropout_prob']
 
+
+    # Prepare data for training
+    signals_numpy = preprocess_data.library_to_numpy(signals_library)
+    signals = create_features(signals_numpy)
+    X_norm, X_norm_params = preprocess_data.z_score_normalize(signals[:,:-1])
+    y_norm, y_norm_params = preprocess_data.z_score_normalize(signals[:,-1])
+    norm_params = X_norm_params, y_norm_params
+    X_train, X_test, y_train, y_test = train_test_split(X_norm, y_norm, test_size=0.33, random_state=42)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if training_output != 3:
         print('Running on:', device)
     if device == "cpu":
-        train_loader = DataLoader(DataPrep(signals_train), batch_size, shuffle=True, num_workers = -1)
+        train_loader = DataLoader(DataPrep(X_train, y_train), batch_size, shuffle=True, num_workers = -1)
     else:
-        train_loader = DataLoader(DataPrep(signals_train), batch_size, shuffle=True, pin_memory=True)
+        train_loader = DataLoader(DataPrep(X_train, y_train), batch_size, shuffle=True, pin_memory=True)
 
-    input_size = np.shape(signals_train)[1]-1
+    input_size = np.shape(signals)[1]-1
     output_size = 1
     model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = nn.MSELoss()
     model.train()  # Set the model in training mode
     model.to(device)
 
     epoch_loss = []
     for epoch in range(num_epochs):
         mini_loss = []
-        for inputs, targets in train_loader:
+        for inputs, target in train_loader:
             optimizer.zero_grad()  # Clear the gradients
             outputs = model(inputs)  # Forward pass
             outputs = outputs.squeeze()
-            loss = criterion(outputs, targets)  # Compute the loss
+            loss = criterion(outputs, target)  # Compute the loss
             loss.backward()  # Backward pass
             optimizer.step()  # Update the weights
             mini_loss.append(loss.item())
@@ -173,86 +225,28 @@ def train_model(signals_train, criterion, hyperparameters, training_output = 2):
         plt.title('Training Loss')
         plt.show()    
 
-    train_features = signals_train[:, :-1] # Prepare test and train data for evaluation   
-    train_tensor = torch.tensor(train_features, dtype=torch.float32)  # Convert the train data to PyTorch tensors
-    model.eval()  # Set the model in evaluation mode
-    model.cpu()  # Move the model to CPU
-
-    # Make predictions on the train dataset
-    with torch.no_grad():
-        train_predictions = model(train_tensor)
-
-    # Convert the predictions and ground truth to NumPy arrays
-    train_predictions = train_predictions.numpy()
-    train_targets = signals_train[:, -1]
-
-    # Calculate the R-squared value for test and train data
-    r2_train = r2_score(train_targets, train_predictions)
+    _, train_r2 = test_model(model, X_train, y_train)
+    _, test_r2  = test_model(model, X_test,  y_test)
+ 
     if training_output != 3:
-        print(summary(model, verbose = 1))
-        print("R-squared value (train):", r2_train)
+        print(summary(model))
+        print("R-squared value (train):", train_r2)
+        print("R-squared value (test):",  test_r2)
         print("Finished Training")
-    return model, r2_train
-
-def test_model(model, signals_test, testing_output = 1, denorm = False, norm_params = None):
-    """
-    evaluate model performance on test data and return testing predictions and r2 score
-
-    Args:
-        model: trained model
-        signals_test (numpy.ndarray): Testing data with input signals and target values.
-        testing_output (int): default set to output testing metrics. Set to 2 if...
-        denorm (bool): default set to True. Set to False if no denormalization is desired.
-        norm_params (tuple): default set to None. Set to tuple of normalization parameters if denorm is desired.
-
-    Returns:
-        test_predictions (numpy.ndarray): Testing predictions
-        r2_test (float): R-squared value for test data   
-    """     
-    if denorm == True:
-        u, sd = norm_params
-        if hasattr(u, "__len__"):
-            y_norm_params = (u[-1],sd[-1])
-        else:
-            y_norm_params = (u,sd)
-        signals_test = preprocess_data.z_score_normalize(signals_test, norm_params)
-
-    # Prepare test data for evaluation
-    test_features = signals_test[:, :-1]
-    test_targets = signals_test[:, -1]  # Assuming the last column represents the target values
-
-    # Convert the test data to PyTorch tensors
-    test_tensor = torch.tensor(test_features, dtype=torch.float32)
-
-    # Make predictions on the test dataset
-    with torch.no_grad():
-        test_predictions = model(test_tensor)
-
-    # Convert the predictions to a NumPy array
-    test_predictions = test_predictions.numpy()
-    
-    # Calculate the R-squared value for test data
-    r2_test = r2_score(test_targets, test_predictions)
-    if testing_output == 1:
-        print("R-squared value (test):", r2_test)
-
-    if denorm == True:
-        test_predictions = preprocess_data.z_score_normalize_inverse(test_predictions, y_norm_params)
-
-    return test_predictions, r2_test
+        torch.save(model.state_dict(), path_names['saved_model'])
+        yaml.dump(hyperparameters, open(path_names['saved_hypers'], 'w'))
+        with open(path_names['norm_params'], 'wb') as fp:
+            pickle.dump(norm_params, fp)
+    return model, train_r2, test_r2
 
 
-def grid_search(param_grid, signals_train, signals_test, saved_model_path, saved_hyper_path, hyper_grid_results):
+def grid_search(param_grid, signals_library, path_names):
     """
     Perform grid search on hyperparameters and save optimum hyperparameters to pyaml configurable file
 
     Args:
         param_grid (dict): dictionary of hyperparameters to search over
-        signals_train (numpy.ndarray): Training data with input signals and target values.
-        signals_test (numpy.ndarray): Testing data with input signals and target values.
-        saved_model_path (str): path to save optimum model
-        saved_hyper_path (str): path to save optimum hyperparameters
-        hyper_grid_results (str): path to save hyperparameter search to file with test scores
+        signals_library:
 
     Returns:
         None
@@ -264,32 +258,27 @@ def grid_search(param_grid, signals_train, signals_test, saved_model_path, saved
     # Perform grid search
     test_r2 = []
     for params in range(len(param_combinations)):    
-        criterion = nn.MSELoss()
-    
-        # Train and evaluate the model
-        model, _ = train_model(signals_train, criterion, param_combinations[params], training_output = 3)
-        _, r2_test = test_model(model, signals_test, 3)
+        _, _, r2_test = train_model(signals_library, param_combinations[params], path_names, training_output = 3)
         test_r2.append(r2_test)
         print(f"Test R2 score for hyperparameter combination {params+1}/{len(param_combinations)}: {r2_test}")
     best_score_index = np.argmax(test_r2)
 
-    # Save optimum hyperparameters to pyaml configurable file
+    # Save trained best model and hyperparameters
     tuned_parameters = param_combinations[best_score_index]
-    model, _ = train_model(signals_train, criterion, tuned_parameters, training_output = 3)
-    torch.save(model.state_dict(), saved_model_path)
-    yaml.dump(tuned_parameters, open(saved_hyper_path, 'w'))
+    _, _, _ = train_model(signals_library, tuned_parameters, path_names)
 
     # save hyperparameter search to file with test scores
     for i, entry in enumerate(param_combinations):
         entry["test_score"] = test_r2[i]
-    with open(hyper_grid_results, "w", newline="") as csvfile: # Save data to CSV file
-        fieldnames = ['num_epochs', 'activation', 'neurons_per_layer', 'learning_rate', 'batch_size','test_score']
+    with open(path_names['grid_results'], "w", newline="") as csvfile: # Save data to CSV file
+        fieldnames = list(param_grid.keys())
+        fieldnames.append("test_score")
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()  # Write header
         for entry in param_combinations:
             writer.writerow(entry)
 
-    print(f"Data saved to {hyper_grid_results}")
+    print(f"Data saved to {path_names['grid_results']}")
     print("optimum hyperparameters found to be:")
     print(param_combinations[best_score_index])
     print(f'With an r2 test score of {test_r2[best_score_index]}')
@@ -315,3 +304,13 @@ def initiate_saved_model(hyper_path, model_path, signals):
     model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation)
     model.load_state_dict(torch.load(model_path))
     return model
+
+def predict(signals, norm_params, model):
+    """
+    """
+    X_norm_params, y_norm_params = norm_params
+    signals = create_features(signals)
+    X_norm, _ = preprocess_data.z_score_normalize(signals[:,:-1], X_norm_params)
+    prediction_norm, _ = test_model(model, X_norm)
+    prediction = preprocess_data.z_score_normalize_inverse(prediction_norm, y_norm_params)
+    return prediction

@@ -22,7 +22,7 @@ import os
 
 # default is set to accept imperial units only
 # default is set to accept imperial units only
-def mach_frict(vel, OutriggerMeanForce, CompForce, ActualTareWt = 112, LiftPressure = 1300, dof = 0): 
+def mach_frict(vel, OutriggerMeanForce, CompForce, ActualTareWt = 114, LiftPressure = 1300, dof = 0): 
     """mach_frict is a function translated directly from the Caltrans SRMD postprocessing protocol (original code in MatLab). It calculates the correction for friction forces only. 
     
     Inputs: 
@@ -96,4 +96,15 @@ def Horizontal_Forces(FrictionValue, velocity, acceleration, weight):
     inertia = weight*acceleration
     horizontal_force = friction_force+inertia
     return horizontal_force
+
+def predict(signals, weight = 114):
+    """
+    """
+    vel = signals[:,2]
+    acceleration = signals[:,3]
+    OutriggerMeanForce = signals[:,6]
+    CompForce = signals[:,7]
+    FrictionValue = mach_frict(vel, OutriggerMeanForce, CompForce, ActualTareWt = weight)
+    horizontal_force_prediction = Horizontal_Forces(FrictionValue, vel, acceleration, weight)
+    return horizontal_force_prediction
 
