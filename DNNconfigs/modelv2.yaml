@@ -1,7 +1,8 @@
-# Test case with R2 testing score of 0.980 and averaged MSE of 0.092
+# Number of neurons in the hidden layer
+hidden_neurons: 32
 
-# represents the number of layers used as the length and the number of neurons per layer
-neurons_per_layer: [32, 64, 128, 256, 512, 256, 128, 64 ,32, 8] 
+# Number of hidden layers
+hidden_layers: 1
 
 # Type of non-linear activation function to be used for all layers
 activation: 'relu'
@@ -14,3 +15,6 @@ batch_size: 512
 
 # Number of epochs to train the model
 num_epochs: 100
+
+# dropout probability to control neurons in the hidden layers
+dropout_prob: 0.1

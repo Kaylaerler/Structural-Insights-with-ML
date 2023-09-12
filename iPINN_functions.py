@@ -23,7 +23,6 @@ def create_features(signals):
     Outputs:
         
     """
-    t   = signals[:,0]
     ux  = signals[:,1]
     vx  = signals[:,2]
     ax  = signals[:,3]
@@ -58,7 +57,7 @@ class DeepNeuralNetwork(nn.Module):
 
     """
     def __init__(self, input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob = 0.2):
-        super().__init__()
+        super(DeepNeuralNetwork,self).__init__()
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
         self.layers = []
@@ -82,7 +81,9 @@ class DeepNeuralNetwork(nn.Module):
                 nn.init.constant_(layer.bias, 0)  # Initialize biases to zero
 
     def forward(self, x):
-        return self.network(x)
+        y1 = self.network(x)
+        
+        return 
     
     # Defining all the activation function available for this class, one can add more if needed
     def get_activation(self, name):

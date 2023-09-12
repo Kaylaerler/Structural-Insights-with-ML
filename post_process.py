@@ -135,16 +135,26 @@ def plot_prediction(empirical_prediction, model_prediction, signals, model_name,
     plot of target and predictions for a given run
     """
     # target and prediction plot
-    plt.figure(figsize=(6,4))
-    plt.plot(signals[:,0], signals[:,-1], label = 'Target')
-    plt.plot(signals[:,0], empirical_prediction, label = 'Empirical Model')
-    plt.plot(signals[:,0], model_prediction, label = model_name)
-    plt.ylabel('Force [tons]', fontsize = 14)
-    plt.xlabel('Time [sec]', fontsize = 14)
-    plt.title('Example Prediction:' + run_name, fontsize=14)
-    plt.legend()
-    plt.tight_layout()
-    plt.grid()
+    _, ax = plt.subplots(nrows=1,ncols=2, figsize=(15,5))
+    axs = ax[0]
+    axs.plot(signals[:,1], signals[:,-1], label = 'Target')
+    axs.plot(signals[:,1], empirical_prediction, label = 'Empirical Model')
+    axs.plot(signals[:,1], model_prediction, label = model_name)
+    axs.set_ylabel('Force [tons]', fontsize = 14)
+    axs.set_xlabel('Displacement [in]', fontsize = 14)
+    axs.set_title('Example Prediction:' + run_name, fontsize=14)
+    axs.legend()
+    axs.grid()
+
+    axs = ax[1]
+    axs.plot(signals[:,0], signals[:,-1], label = 'Target')
+    axs.plot(signals[:,0], empirical_prediction, label = 'Empirical Model')
+    axs.plot(signals[:,0], model_prediction, label = model_name)
+    axs.set_ylabel('Force [tons]', fontsize = 14)
+    axs.set_xlabel('Timne [s]', fontsize = 14)
+    axs.set_title('Example Prediction:' + run_name, fontsize=14)
+    axs.legend()
+    axs.grid()
 
 def plot_signals(test_number, preprocessed_data_directory = 'preprocessed_data'):
     """
