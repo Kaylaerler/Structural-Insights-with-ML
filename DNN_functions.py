@@ -283,7 +283,7 @@ def grid_search(param_grid, signals_library, path_names):
     print(param_combinations[best_score_index])
     print(f'With an r2 test score of {test_r2[best_score_index]}')
 
-def initiate_saved_model(hyper_path, model_path, signals):
+def initiate_saved_model(hyper_path, model_path, all_signals):
     """
     Load saved model and hyperparameters
     
@@ -295,6 +295,7 @@ def initiate_saved_model(hyper_path, model_path, signals):
     Returns:
         model: trained model
     """
+    signals = create_features(all_signals)
     hyperparameters = yaml.load(open(hyper_path, 'r'), Loader=yaml.SafeLoader)
     input_size = np.shape(signals)[1]-1
     output_size = 1
