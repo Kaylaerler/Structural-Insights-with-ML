@@ -43,7 +43,6 @@ class DeepNeuralNetwork(nn.Module):
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
         self.layers = []
-        print(layers)
 
         for i in range(len(layers)- 1):
             layer = nn.Linear(layers[i], layers[i+1])     # Creating the hidden layers from the array given as input
