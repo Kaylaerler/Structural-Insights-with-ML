@@ -1,10 +1,8 @@
 # Project Created Folders
 ET_Runs
-Experiments AA 
-Experiments KE
-preprocessed_data_DNN
-preprocessed_data_LR
-preprocessed_data_PINN
+preprocessed_data
+test.py
+trial.py
 
 
 # Byte-compiled / optimized / DLL files

@@ -1,16 +1,20 @@
-# Best test case 
+# Number of neurons in the hidden layer
+hidden_neurons: 2
 
-# represents the number of layers used as the length and the number of neurons per layer
-neurons_per_layer: [30, 50, 100, 300, 500, 200, 100, 50 ,30, 10] 
+# Number of hidden layers
+hidden_layers: 1
 
 # Type of non-linear activation function to be used for all layers
 activation: 'relu'
 
 # The learning rate to be used for training.
-learning_rate: 0.001
+learning_rate: 0.01
 
 # Number of training samples per batch to be passed to network
-batch_size: 500
+batch_size: 512
 
 # Number of epochs to train the model
-num_epochs: 5
+num_epochs: 2
+
+# dropout probability to control neurons in the hidden layers
+dropout_prob: 0.1
