@@ -285,7 +285,7 @@ def grid_search(param_grid, signals_library, path_names):
 
     return best_model
 
-def initiate_saved_model(hyper_path, model_path, signals):
+def initiate_saved_model(hyper_path, model_path, all_signals):
     """
     Load saved model and hyperparameters
     
@@ -297,6 +297,7 @@ def initiate_saved_model(hyper_path, model_path, signals):
     Returns:
         model: trained model
     """
+    signals = create_features(all_signals)
     hyperparameters = yaml.load(open(hyper_path, 'r'), Loader=yaml.SafeLoader)
     input_size = np.shape(signals)[1]-1
     output_size = 1
