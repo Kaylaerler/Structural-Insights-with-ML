@@ -1,13 +1,13 @@
 # Hyperparameter tuning configuration file
 
 # Number of neurons to be used in each hidden layer
-hidden_neurons: [1, 2, 4, 8, 16, 32]
+hidden_neurons: [1, 2, 4, 8, 16]
 
 # Number of hidden layers to be used in the network
 hidden_layers: [1, 2, 4, 8, 16, 32] 
 
 # Type of non-linear activation function to be used for all layers
-activation: ['relu', 'leaky_relu']
+activation: ['relu','leady_relu']
 
 # The learning rate to be used for training.
 learning_rate: [0.001, 0.0001]
@@ -16,7 +16,7 @@ learning_rate: [0.001, 0.0001]
 batch_size: [512, 1024]
 
 # Number of epochs to train the model
-num_epochs: [30]
+num_epochs: [20]
 
 # drop out probability
 dropout_prob: [0.1, 0.2, 0.3, 0.4, 0.5]

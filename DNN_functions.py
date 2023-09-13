@@ -265,7 +265,7 @@ def grid_search(param_grid, signals_library, path_names):
 
     # Save trained best model and hyperparameters
     tuned_parameters = param_combinations[best_score_index]
-    _, _, _ = train_model(signals_library, tuned_parameters, path_names)
+    best_model, _, _ = train_model(signals_library, tuned_parameters, path_names)
 
     # save hyperparameter search to file with test scores
     for i, entry in enumerate(param_combinations):
@@ -282,6 +282,8 @@ def grid_search(param_grid, signals_library, path_names):
     print("optimum hyperparameters found to be:")
     print(param_combinations[best_score_index])
     print(f'With an r2 test score of {test_r2[best_score_index]}')
+
+    return best_model
 
 def initiate_saved_model(hyper_path, model_path, signals):
     """
