@@ -261,6 +261,7 @@ def grid_search(param_grid, signals_library, path_names):
         _, _, r2_test = train_model(signals_library, param_combinations[params], path_names, training_output = 3)
         test_r2.append(r2_test)
         print(f"Test R2 score for hyperparameter combination {params+1}/{len(param_combinations)}: {r2_test}")
+        print(f"Hyperparameters: {param_combinations[params]}")
     best_score_index = np.argmax(test_r2)
 
     # Save trained best model and hyperparameters

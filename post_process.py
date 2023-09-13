@@ -4,9 +4,7 @@ import matplotlib.pyplot as plt
 import sklearn as skl
 
 # modules created for this project
-import DNN_functions
 import ShortreedModel
-import LR_functions
 
 
 def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', norm_params = None, selected_feature_indices=None, alpha = 0):
@@ -27,6 +25,7 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
         signals = signals_library[i]['data']
         empirical_prediction = ShortreedModel.predict(signals)
         if model_type == "LR":
+            import LR_functions
             # use model paramaters that are in denormalized units to predict
             bias, params = model
             X, _, _ = LR_functions.create_features(alpha, signals)
@@ -34,6 +33,7 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
             params = params.reshape(len(params), 1)
             prediction = np.matmul(X_exp, params) + bias
         else:
+            import DNN_functions
             prediction = DNN_functions.predict(signals, norm_params, model)
 
         # z-score normalize on a per run basis to have better comparison amongst runs for fit

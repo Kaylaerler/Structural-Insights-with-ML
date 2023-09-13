@@ -7,7 +7,7 @@ hidden_neurons: [1, 2, 4, 8, 16]
 hidden_layers: [1, 2, 4, 8, 16, 32] 
 
 # Type of non-linear activation function to be used for all layers
-activation: ['relu','leady_relu']
+activation: ['leaky_relu']
 
 # The learning rate to be used for training.
 learning_rate: [0.001, 0.0001]
