@@ -146,10 +146,10 @@ def signal_preprocessing(directory, dpath, file):
         labels[i] = {'name': names[i], 'units': units[i]}
     return signals.T, labels
 
-def ETdata_to_library(saved_data_directory):
+def ETdata_to_dictionary(saved_data_directory, save_results = True):
     """ 
     """                        
-    signals_library = {} # initialize feature library
+    signals_dictionary = {} # initialize signals dictionary
     if environment == 'local':
         Mpath      = os.getcwd()
     else:
@@ -166,20 +166,21 @@ def ETdata_to_library(saved_data_directory):
                 f_ext      = dpath+file  # create full extension for chosen file
                 # obtain preprocessed signals from the file extension needed for linear regression
                 signals, labels = signal_preprocessing(f_ext, dpath, file)
-                signals_library[k] = {'data' : signals, 'test' : data_folds[i]+file, 'labels': labels} 
+                signals_dictionary[k] = {'data' : signals, 'test' : data_folds[i]+file, 'labels': labels} 
                 k = k+1    
     signal_file = saved_data_directory + '/signals_data.pkl'
-    with open(signal_file, 'wb') as fp:
-        pickle.dump(signals_library, fp)
-        print('dictionary saved successfully to file:', saved_data_directory)
-    return signals_library
+    if save_results:
+        with open(signal_file, 'wb') as fp:
+            pickle.dump(signals_dictionary, fp)
+            print('dictionary saved successfully to file:', saved_data_directory)
+    return signals_dictionary
 
-def library_to_numpy(signals_library):
+def dictionary_to_numpy(signals_dictionary):
     """
     """
-    signals_numpy = signals_library[0]['data']
-    for i in range(1,len(signals_library)):
-        signals_numpy = np.append(signals_numpy, signals_library[i]['data'], axis = 0)
+    signals_numpy = signals_dictionary[0]['data']
+    for i in range(1,len(signals_dictionary)):
+        signals_numpy = np.append(signals_numpy, signals_dictionary[i]['data'], axis = 0)
     return signals_numpy
 
 def load_data_set(preprocessed_data_directory, load = True):
@@ -189,11 +190,11 @@ def load_data_set(preprocessed_data_directory, load = True):
         os.mkdir(preprocessed_data_directory)
     if os.path.exists(preprocessed_data_directory +'/signals_data.pkl') and load:
         print("Loading Stored Data")
-        signals_library = np.load(preprocessed_data_directory+'/signals_data.pkl', allow_pickle = True)
+        signals_dictionary = np.load(preprocessed_data_directory+'/signals_data.pkl', allow_pickle = True)
     else:
         print("Extracting Data from Individual Folders")
-        signals_library = ETdata_to_library(preprocessed_data_directory)
-    return signals_library
+        signals_dictionary = ETdata_to_dictionary(preprocessed_data_directory)
+    return signals_dictionary
 
 def z_score_normalize(X, norm_params = None, treat_disp_different = False):
     """

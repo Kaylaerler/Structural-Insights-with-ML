@@ -6,6 +6,7 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import ParameterGrid
 from sklearn.model_selection import train_test_split
 import pickle
+import os
 
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
@@ -31,6 +32,35 @@ def create_features(signals):
     
     signals_out = np.vstack((ux, vx, ax, signvx, Y)).T
     return signals_out
+
+def create_feature_dictionary(signals_dictionary, path_names):
+    """
+    """
+    # Prepare data for training
+    signals_numpy = preprocess_data.dictionary_to_numpy(signals_dictionary)
+    signals = create_features(signals_numpy)
+    X_norm, X_norm_params = preprocess_data.z_score_normalize(signals[:,:-1])
+    y_norm, y_norm_params = preprocess_data.z_score_normalize(signals[:,-1])
+    norm_params = X_norm_params, y_norm_params
+    X_train_val, X_test, y_train_val, y_test = train_test_split(X_norm, y_norm, test_size=0.33, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.33, random_state=42)
+    feature_dictionary = {'X_train': X_train, 
+                          'X_val': X_val, 
+                          'X_test': X_test, 
+                          'y_train': y_train, 
+                          'y_val': y_val, 
+                          'y_test': y_test,
+                          'norm_params': norm_params}
+    
+
+    if path_names['save_results']:
+        if not os.path.exists(path_names['results']):
+            os.mkdir(path_names['results'])
+        with open(path_names['norm_params'], 'wb') as fp:
+            pickle.dump(norm_params, fp)
+    return feature_dictionary
+
+
 
 
 class DeepNeuralNetwork(nn.Module):
@@ -151,22 +181,23 @@ def test_model(model, X_test, y_test = None):
         r2_test = r2_score(y_test, test_predictions)
     return test_predictions, r2_test
 
-def train_model(signals_library, hyperparameters, path_names, training_output = 2):
+def train_model(features, hyperparameters, path_names, training_output = 2):
     """
     Trains a PyTorch model using the given data, criterion, and optimizer.
 
     Args:
-        signals_train (numpy.ndarray): Training data with input signals and target values.
-        criterion: The loss criterion to compute the training loss.
-        hyperparameters: library of selected hyperparameter values
-        training_output (int): default set to output training metrics at every epoch. Set to 2 if 
-                                loss plot is desired during the middle of training. Set to 3 if no 
-                                training metric output is desired.
+        features (dict): dictionary containing numpy arrays for training, testing and validation data
+        criterion      : The loss criterion to compute the training loss.
+        hyperparameters: dictionary of selected hyperparameter values
+        training_output (int): set to 1 to output training metrics at every epoch. 
+                                Set to 2 if loss plot is desired with scoring metrics only provided at end. 
+                                Set to 3 if no training metric output is desired, only validation.
 
 
     Returns:
         model: trained model
         r2_train (float): R-squared value for train data
+        r2_val   (float): R-squared value for validation data
     """
     hidden_neurons = hyperparameters['hidden_neurons']
     hidden_layers = hyperparameters['hidden_layers']
@@ -176,24 +207,17 @@ def train_model(signals_library, hyperparameters, path_names, training_output = 
     num_epochs = hyperparameters['num_epochs']
     dropout_prob = hyperparameters['dropout_prob']
 
-
-    # Prepare data for training
-    signals_numpy = preprocess_data.library_to_numpy(signals_library)
-    signals = create_features(signals_numpy)
-    X_norm, X_norm_params = preprocess_data.z_score_normalize(signals[:,:-1])
-    y_norm, y_norm_params = preprocess_data.z_score_normalize(signals[:,-1])
-    norm_params = X_norm_params, y_norm_params
-    X_train, X_test, y_train, y_test = train_test_split(X_norm, y_norm, test_size=0.33, random_state=42)
-
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     if training_output != 3:
         print('Running on:', device)
     if device == "cpu":
-        train_loader = DataLoader(DataPrep(X_train, y_train), batch_size, shuffle=True, num_workers = -1)
+        train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
+        val_loader   = DataLoader(DataPrep(features['X_val'],   features['y_val']),   batch_size, shuffle=True, num_workers = -1)
     else:
-        train_loader = DataLoader(DataPrep(X_train, y_train), batch_size, shuffle=True, pin_memory=True)
+        train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
+        val_loader   = DataLoader(DataPrep(features['X_val'],   features['y_val']),   batch_size, shuffle=True)
 
-    input_size = np.shape(signals)[1]-1
+    input_size  = np.shape(features['X_train'])[1]
     output_size = 1
     model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -201,9 +225,11 @@ def train_model(signals_library, hyperparameters, path_names, training_output = 
     model.train()  # Set the model in training mode
     model.to(device)
 
-    epoch_loss = []
+    epoch_train_loss = []
+    epoch_val_loss = []
     for epoch in range(num_epochs):
-        mini_loss = []
+        mini_train_loss = []
+        model.train()
         for inputs, target in train_loader:
             optimizer.zero_grad()  # Clear the gradients
             outputs = model(inputs)  # Forward pass
@@ -211,62 +237,79 @@ def train_model(signals_library, hyperparameters, path_names, training_output = 
             loss = criterion(outputs, target)  # Compute the loss
             loss.backward()  # Backward pass
             optimizer.step()  # Update the weights
-            mini_loss.append(loss.item())
+            mini_train_loss.append(loss.item())
+
+        mini_val_loss = []
+        model.eval()
+        for inputs, target in val_loader:
+            outputs = model(inputs)  # Forward pass
+            outputs = outputs.squeeze()
+            loss = criterion(outputs, target)  # Compute the loss
+            mini_val_loss.append(loss.item())
                 
-        epoch_loss.append(np.mean(mini_loss))
+        epoch_train_loss.append(np.mean(mini_train_loss))
+        epoch_val_loss.append(np.mean(mini_val_loss))
+
         if training_output == 1:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_loss[epoch]}")
+            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_train_loss[epoch]}")
+
             
     # Plot the loss
     if training_output == 2:
-        plt.plot(epoch_loss)
+        plt.plot(epoch_train_loss, label = 'Training Loss')
+        plt.plot(epoch_val_loss, label = 'Validation Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.title('Training Loss')
+        plt.legend()
         plt.show()    
 
-    _, train_r2 = test_model(model, X_train, y_train)
-    _, test_r2  = test_model(model, X_test,  y_test)
+    _, train_r2 = test_model(model, features['X_train'], features['y_train'])
+    _, val_r2   = test_model(model, features['X_val'],   features['y_val'])
+    _, test_r2  = test_model(model, features['X_test'],  features['y_test'])
  
     if training_output != 3:
         print(summary(model))
         print("R-squared value (train):", train_r2)
         print("R-squared value (test):",  test_r2)
         print("Finished Training")
-        torch.save(model.state_dict(), path_names['saved_model'])
-        yaml.dump(hyperparameters, open(path_names['saved_hypers'], 'w'))
-        with open(path_names['norm_params'], 'wb') as fp:
-            pickle.dump(norm_params, fp)
-    return model, train_r2, test_r2
+        if path_names['save_results']:
+            torch.save(model.state_dict(), path_names['saved_model'])
+            yaml.dump(hyperparameters, open(path_names['saved_hypers'], 'w'))
+    return model, train_r2, val_r2, test_r2
 
 
-def grid_search(param_grid, signals_library, path_names):
+def random_search(param_grid, features, path_names, search_space_ratio):
     """
-    Perform grid search on hyperparameters and save optimum hyperparameters to pyaml configurable file
+    Perform random grid search on hyperparameters and save optimum hyperparameters to pyaml configurable file
+    as well as output to a csv with all hyperparameter combinations and their respective test scores.
 
     Args:
-        param_grid (dict): dictionary of hyperparameters to search over
-        signals_library:
+        param_grid (dict)         : dictionary of hyperparameters to search over
+        features (dict)           : dictionary of features for train, val and testing
+        path_names (dict)         : dictionary of file paths
+        search_space_ratio (float): ratio of hyperparameter combinations to search over
 
     Returns:
-        None
+        best_model (model)        : trained model with optimum hyperparameters
     """
     
      # Generate all possible combinations of hyperparameters
     param_combinations = list(ParameterGrid(param_grid))
+    random_param_combinations = np.random.choice(len(param_combinations), int(len(param_combinations)*search_space_ratio), replace=False)
 
-    # Perform grid search
-    test_r2 = []
-    for params in range(len(param_combinations)):    
-        _, _, r2_test = train_model(signals_library, param_combinations[params], path_names, training_output = 3)
-        test_r2.append(r2_test)
-        print(f"Test R2 score for hyperparameter combination {params+1}/{len(param_combinations)}: {r2_test}")
+    # Perform grid search over the randomly selected hyperparameter combinations
+    val_r2 = []
+    for params in range(len(random_param_combinations)):    
+        _, _, r2_val, _ = train_model(features, param_combinations[params], path_names, training_output = 3)
+        val_r2.append(r2_val)
+        print(f"Test R2 score for hyperparameter combination {params+1}/{len(param_combinations)}: {r2_val}")
         print(f"Hyperparameters: {param_combinations[params]}")
-    best_score_index = np.argmax(test_r2)
+    best_score_index = np.argmax(val_r2)
 
     # Save trained best model and hyperparameters
     tuned_parameters = param_combinations[best_score_index]
-    best_model, _, _ = train_model(signals_library, tuned_parameters, path_names)
+    best_model, _, _, test_r2 = train_model(features, tuned_parameters, path_names)
 
     # save hyperparameter search to file with test scores
     for i, entry in enumerate(param_combinations):
@@ -286,31 +329,40 @@ def grid_search(param_grid, signals_library, path_names):
 
     return best_model
 
-def initiate_saved_model(hyper_path, model_path, all_signals):
+def initiate_saved_model(hyper_path, model_path, features):
     """
     Load saved model and hyperparameters
     
     Args:
         hyper_path (str): path to saved hyperparameters
         model_path (str): path to saved model
-        signals (numpy.ndarray): Training data with input signals and target values. Used to determine input size of model.
+        features (dict) : dictionary of features for train, val and testing
         
     Returns:
-        model: trained model
+        model: trained network
     """
-    signals = create_features(all_signals)
     hyperparameters = yaml.load(open(hyper_path, 'r'), Loader=yaml.SafeLoader)
-    input_size = np.shape(signals)[1]-1
+    input_size = np.shape(features['X_test'])[1]
     output_size = 1
     hidden_neurons = hyperparameters['hidden_neurons']
-    hidden_layers = hyperparameters['hidden_layers']
-    activation = hyperparameters['activation']
+    hidden_layers  = hyperparameters['hidden_layers']
+    activation     = hyperparameters['activation']
     model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation)
     model.load_state_dict(torch.load(model_path))
     return model
 
 def predict(signals, norm_params, model):
-    """
+    """ 
+    Predicts the output of the model for a given set of input signals
+
+    Args:
+        signals (numpy.ndarray): Input signals to predict output for
+        norm_params (tuple): Normalization parameters for input and output signals
+        model: trained network
+
+    Returns:
+        prediction (numpy.ndarray): Predicted output
+
     """
     X_norm_params, y_norm_params = norm_params
     signals = create_features(signals)

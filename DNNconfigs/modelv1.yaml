@@ -14,7 +14,7 @@ learning_rate: 0.01
 batch_size: 512
 
 # Number of epochs to train the model
-num_epochs: 2
+num_epochs: 50
 
 # dropout probability to control neurons in the hidden layers
 dropout_prob: 0.1

@@ -4,4 +4,4 @@ dropout_prob: 0.1
 hidden_layers: 1
 hidden_neurons: 2
 learning_rate: 0.01
-num_epochs: 2
+num_epochs: 50

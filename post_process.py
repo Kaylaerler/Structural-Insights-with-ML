@@ -20,9 +20,9 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
     """         
     empirical_output = {}
     model_output= {}
-    signals_library = preprocess_data.load_data_set(saved_data_directory)
-    for i in range(len(signals_library)):     # cycle through all data folders
-        signals = signals_library[i]['data']
+    signals_dictionary = preprocess_data.load_data_set(saved_data_directory)
+    for i in range(len(signals_dictionary)):     # cycle through all data folders
+        signals = signals_dictionary[i]['data']
         empirical_prediction = ShortreedModel.predict(signals)
         if model_type == "LR":
             import LR_functions
@@ -160,10 +160,10 @@ def plot_signals(test_number, preprocessed_data_directory = 'preprocessed_data')
     """
     """
     plot_signals = [1,2,3,4,5,8]
-    signals_library =  preprocess_data.load_data_set(preprocessed_data_directory)
+    signals_dictionary =  preprocess_data.load_data_set(preprocessed_data_directory)
     _, ax   = plt.subplots(nrows=len(plot_signals),ncols=1, figsize=(10,10))
-    signals = signals_library[test_number]['data']
-    labels  = signals_library[test_number]['labels']
+    signals = signals_dictionary[test_number]['data']
+    labels  = signals_dictionary[test_number]['labels']
     i = 0
     for sig in plot_signals:
         axs = ax[i]
