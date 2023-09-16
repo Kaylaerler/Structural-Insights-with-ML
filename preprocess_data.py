@@ -1,30 +1,25 @@
-# References and Licensing
 """
-Code functions written by Kayla Erler updated 5/22/2023
+Module Name: preprocess_data
+Author: Kayla Erler
+Version: 1.0.0
+Date: 10/15/2023
+License: GNU
 
-Functions defined for data from the seismic response modification device (SRMD) empty table runs. More details on the testing facility can be found at: https://se.ucsd.edu/facilities/laboratory-listing/srmd
+Description:
+-----------
+preprocess_data is a collection of useful functions and utilities for tasks related to signal processing, normalization and restructuring.
 
-Refferences for the papers used to facilitate developement of models:
-[Shortreed et al. (2001)](https://royalsocietypublishing.org/doi/10.1098/rsta.2001.0875) "Characterization and testing of the Caltrans Seismic Response Modification Device Test System". Phil. #Trans. R. Soc. A.359: 1829–1850
+Usage:
+------
+import preprocess_data 
 
-[Ozcelick et al. (2008)](http://jaguar.ucsd.edu/publications/refereed_journals/Ozcelik_Luco_Conte_Trombetti_Restrepo_EESD_2008.pdf) "Experimental Characterization, modeling and identification of the NEES-UCSD shake table mechanical systetm". Eathquake Engineering and Structural Dynamics, vol. 37, pp. 243-264, 2008
+# Example Usage
+result = preprocess_data.some_function(arg1, arg2)
 
-Citation and Licensing:
-Kayla Erler 
-
-[Rathje et al. (2017)](https://doi.org/10.1061/(ASCE)NH.1527-6996.0000246) "DesignSafe: New Cyberinfrastructure for Natural Hazards Engineering". ASCE: Natural Hazards Review / Volume 18 Issue 3 - August 2017
-
-This software is distributed under the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.html).
 """
-
-environment = 'local' # 'designsafe' or 'local'
-
+# Open source modules available in python
 import numpy as np
 import os
-if environment == 'local':
-    import ShortreedModel
-else:
-    import gdrive.MyDrive.structural.ShortreedModel as ShortreedModel
 import pandas as pd
 from scipy.signal import savgol_filter
 from scipy import signal
@@ -146,14 +141,11 @@ def signal_preprocessing(directory, dpath, file):
         labels[i] = {'name': names[i], 'units': units[i]}
     return signals.T, labels
 
-def ETdata_to_dictionary(saved_data_directory, save_results = True):
+def ETdata_to_dictionary():
     """ 
     """                        
     signals_dictionary = {} # initialize signals dictionary
-    if environment == 'local':
-        Mpath      = os.getcwd()
-    else:
-        Mpath = "/content/gdrive/MyDrive/structural"
+    Mpath      = os.getcwd()
     Mdata_fold = '/ET_Runs/'             # folder containing data
     data_folds = ['dataW/','dataK/','dataH2/','dataH1/','data3/','data2/','data1/'] # subfolders containing data from testing routines
     k          = 0                       # instantiate index for examples
@@ -168,11 +160,6 @@ def ETdata_to_dictionary(saved_data_directory, save_results = True):
                 signals, labels = signal_preprocessing(f_ext, dpath, file)
                 signals_dictionary[k] = {'data' : signals, 'test' : data_folds[i]+file, 'labels': labels} 
                 k = k+1    
-    signal_file = saved_data_directory + '/signals_data.pkl'
-    if save_results:
-        with open(signal_file, 'wb') as fp:
-            pickle.dump(signals_dictionary, fp)
-            print('dictionary saved successfully to file:', saved_data_directory)
     return signals_dictionary
 
 def dictionary_to_numpy(signals_dictionary):
@@ -183,17 +170,24 @@ def dictionary_to_numpy(signals_dictionary):
         signals_numpy = np.append(signals_numpy, signals_dictionary[i]['data'], axis = 0)
     return signals_numpy
 
-def load_data_set(preprocessed_data_directory, load = True):
+def load_data_set(preprocessed_data_directory, save = True, load = True):
     """ 
-    """   
-    if not os.path.exists(preprocessed_data_directory):
-        os.mkdir(preprocessed_data_directory)
+    """           
     if os.path.exists(preprocessed_data_directory +'/signals_data.pkl') and load:
         print("Loading Stored Data")
         signals_dictionary = np.load(preprocessed_data_directory+'/signals_data.pkl', allow_pickle = True)
     else:
         print("Extracting Data from Individual Folders")
         signals_dictionary = ETdata_to_dictionary(preprocessed_data_directory)
+    
+    # save data if desired
+    signal_file = preprocessed_data_directory + '/signals_data.pkl'
+    if save:
+        if not os.path.exists(preprocessed_data_directory):
+            os.mkdir(preprocessed_data_directory)
+        with open(signal_file, 'wb') as fp:
+            pickle.dump(signals_dictionary, fp)
+            print('dictionary saved successfully to file:', signal_file)
     return signals_dictionary
 
 def z_score_normalize(X, norm_params = None, treat_disp_different = False):

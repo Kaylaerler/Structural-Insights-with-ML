@@ -1,11 +1,30 @@
+"""
+Module Name: post_process
+Author: Kayla Erler
+Version: 1.0.0
+Date: 10/15/2023
+License: GNU
+
+Description:
+-----------
+post_process is a collection of useful functions and utilities for tasks related to visualization after running machine learning algorithms to evaluate model fit.
+
+Usage:
+------
+import post_process 
+
+# Example Usage
+result = post_process.some_function(arg1, arg2)
+
+"""
+# modules created for this project
+import ShortreedModel
+
+# Open source modules available in python
 import numpy as np
 import preprocess_data
 import matplotlib.pyplot as plt
 import sklearn as skl
-
-# modules created for this project
-import ShortreedModel
-
 
 def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', norm_params = None, selected_feature_indices=None, alpha = 0):
     """
@@ -13,10 +32,17 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
     These testing scores are normalized on a per run basis to understand the equivalent performance of the model accross
     runs with varrying amplitudes. 
 
-    Inputs:
-    ----------
-    model : torch.nn.Module or tuple
-    
+    Args:
+        model : (tuple or torch object) contains the model parameters and bias for linear regression or the torch object for the DNN
+        model_type : (str) either "LR" or "DNN" to indicate which model is being tested
+        saved_data_directory : (str) directory where the preprocessed data is saved
+        norm_params : (tuple) contains the mean and standard deviation used to normalize the data
+        selected_feature_indices : (list) contains the indices of the features that were selected by the feature selection algorithm
+        alpha : (float) exponential term from equation 3
+
+    Returns:
+        empirical_output : (dict) contains the empirical prediction and MSE and MAE for each run
+        model_output : (dict) contains the model prediction and MSE and MAE for each run
     """         
     empirical_output = {}
     model_output= {}
@@ -66,21 +92,12 @@ def model_per_run_scoring(empirical_output, model_output, model_name):
     with median velocity and acceleration normalized so that the relative scale of each is indicated per run.
         
     Args:
-    ----------
-    MSE : list
-        Mean Squared Error for each run
-    Vx_Median : list
-        Median Horizontal Velocity for each run
-    Ax_Median : list
-        Median Horizontal Acceleration for each run
-    MSE_empirical : list
-        Mean Squared Error for each run for the empirical model
-    model_name : str
-        Name of the model being tested
+        empirical_output : (dict) contains the empirical prediction and MSE and MAE for each run
+        model_output : (dict) contains the model prediction and MSE and MAE for each run
+        model_name : (str) name of the model being tested
 
     Returns:
-    ----------
-    plot of MSE and MAE per run with median velocity and acceleration normalized
+        plot of MSE and MAE for each run with median velocity and acceleration normalized
     """
     MSE = []
     Vx_median = []
@@ -116,23 +133,14 @@ def plot_prediction(empirical_prediction, model_prediction, signals, model_name,
     the target and predictions for a given run.
     
     Args:
-    ----------
-    time : np.array
-        time vector
-    signals : np.array
-        signals from the run
-    empirical_prediction : np.array
-        prediction from the empirical model
-    prediction : np.array
-        prediction from the model
-    run_name : str
-        name of the run
-    model_name : str
-        name of the model being tested
-        
+        empirical_prediction : (np.array) empirical prediction for the run
+        model_prediction : (np.array) model prediction for the run
+        signals : (np.array) time and signals for the run
+        model_name : (str) name of the model being tested
+        run_name : (str) name of the run being tested
+
     Returns:
-    ----------
-    plot of target and predictions for a given run
+        plot of target and predictions for a given run
     """
     # target and prediction plot
     _, ax = plt.subplots(nrows=1,ncols=2, figsize=(15,5))
@@ -157,7 +165,15 @@ def plot_prediction(empirical_prediction, model_prediction, signals, model_name,
     axs.grid()
 
 def plot_signals(test_number, preprocessed_data_directory = 'preprocessed_data'):
-    """
+    """ 
+    plot_signals is a function that takes in the test number and plots the signals for that test.
+
+    Args:
+        test_number : (int) number of the test to plot
+        preprocessed_data_directory : (str) directory where the preprocessed data is saved
+
+    Returns:
+        plot of the signals for the given test
     """
     plot_signals = [1,2,3,4,5,8]
     signals_dictionary =  preprocess_data.load_data_set(preprocessed_data_directory)
@@ -196,21 +212,16 @@ def lgmodel_denorm_params(bias, model_params, norm_params, y_norm_params, select
         *  signifies element-wise multiplication of a vector
         when no subscript exists in formula, vector notation is implied
 
-    Inputs
-    ----------
-    bias : np.array
-        b
-    model_params : np.array
-        a
-    norm_params : tuple
-        μ & σ
-        The mean and std deviation used when normalizing
-
-    Returns
-    -------
-        Tuple:
-            bias in tons
-            model parameters based on real coefficient units
+    Args:
+        bias : (float) bias of the model
+        model_params : (np.array) model parameters
+        norm_params : (tuple) contains the mean and standard deviation used to normalize the data
+        y_norm_params : (tuple) contains the mean and standard deviation used to normalize the target
+        selected_feature_indices : (list) contains the indices of the features that were selected by the feature selection algorithm
+        
+    Returns:
+        bias_real : (float) bias of the model in real units
+        a_real : (np.array) model parameters in real units
     """
     u, sd = norm_params
     u = u[selected_feature_indices]

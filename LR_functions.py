@@ -1,7 +1,29 @@
-import numpy as np
+"""
+Module Name: LR_functions
+Author: Kayla Erler
+Version: 1.0.0
+Date: 10/15/2023
+License: GNU
+
+Description:
+-----------
+LR_functions is a collection of useful functions and utilities for tasks related to implementation 
+    of sklearn Linear Regression on shake table data.
+
+Usage:
+------
+import LR_functions 
+
+# Example Usage
+result = LR_functions.some_function(arg1, arg2)
+
+"""
+
+# modules developed for this project
 import preprocess_data
 
-# Open source libraries available in python
+# Open source modules available in python
+import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score 
 from sklearn.feature_selection import SelectKBest, f_regression
@@ -11,13 +33,13 @@ def create_features(alpha, signals):
     """ function takes the exponential terms of the model and creates the input features from the input signals and stacks the data into a numpy array, 
     X for the input features and Y for the target. 
 
-    Inputs:
-        alpha   - exponential term from equation 3
-        signals - displacement, velocity, acceleration, force columns  
+    Args:
+        alpha   - (float) exponential term from equation 3
+        signals - (np array) input signals (displacement, velocity, acceleration, outrigger force, actuator force, and target force)
 
     Outputs:
-        X        - 2D feature matrix with rows corresponding to instance and columns corresponding to feature
-        Y        - 1D target array with number of rows equal to that of X 
+        X        - (np array) 2D feature matrix with rows corresponding to instance and columns corresponding to feature
+        Y        - (np array) 1D target array with number of rows equal to that of X 
     """
     ux  = signals[:,1]
     vx  = signals[:,2]
@@ -99,6 +121,16 @@ def train(alpha, signals_library, number_features = 0):
 
 
 def fit_exponential(num_pts, signals_library):
+    """ function takes the exponential terms of the model and creates the input features from the input signals 
+    and stacks the data into a numpy array, X for the input features and Y for the target.
+
+    Args:
+        num_pts - (int) number of points to evaluate the exponential term over
+        signals_library - (pandas dataframe) library of signals
+
+    Outputs:
+        alpha_optimal - (float) optimal exponential term
+    """
     # parametric analysis to fit exponential terms
     alpha_range = np.linspace(0.2,1,num = num_pts)
     MSE = np.empty(np.shape(alpha_range))

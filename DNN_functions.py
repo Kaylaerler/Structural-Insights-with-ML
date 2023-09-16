@@ -1,3 +1,35 @@
+"""
+Module Name: DNN_functions
+Author: Kayla Erler
+Version: 1.0.0
+Date: 10/15/2023
+License: GNU
+
+Description:
+-----------
+DNN_functions is a collection of useful functions and utilities for tasks related to forming a deep neural network 
+                from signals that were constructed using the preprocess_data function developed by the same author.
+                The deep neural network is constructed using PyTorch and implements mini-batch gradient descent with
+                the Adam optimizer. The network is customizable in the sense that the user can specify the number of
+                hidden layers, the number of neurons in each hidden layer, the activation function, the learning rate,
+                the batch size, the number of epochs, and the dropout probability. The network is designed to have a
+                linear output layer. The network is trained using the mean squared error loss function. The network
+                can be trained using a random grid search over the hyperparameters specified by the user. The network
+                can also be trained using a saved model and hyperparameters. The network can be used to predict the
+                output of a set of input signals.
+
+Usage:
+------
+import DNN_functions 
+
+# Example Usage
+result = DNN_functions.some_function(arg1, arg2)
+
+"""
+# modules developed for this project
+import preprocess_data
+
+# Open source modules available in python
 import csv
 import yaml
 import numpy as np
@@ -14,27 +46,38 @@ import torch
 import torch.nn as nn
 from torchinfo import summary
 
-import preprocess_data
-
 def create_features(signals):
     """  
-    Inputs:
-        signals - displacement, velocity, acceleration, force columns  
+    Creates features for the DNN model from the input signals. The features are displacement, velocity, acceleration, signum of velocity, and target value.
+    
+    Args:
+        signals (numpy.ndarray): Input signals to create features for the DNN model (see preprocess_data for the signal format)
 
     Outputs:
+        signals_out (numpy.ndarray): Selected input signals for the DNN model
         
     """
-    ux  = signals[:,1]
-    vx  = signals[:,2]
-    ax  = signals[:,3]
-    signvx = np.sign(vx)
-    Y   = signals[:,-1]
+    ux  = signals[:,1] # displacement
+    vx  = signals[:,2] # velocity
+    ax  = signals[:,3] # accleration
+    signvx = np.sign(vx) # signum of velocity (1 if positive, -1 if negative)
+    Y   = signals[:,-1] # target value (horizontal force)
     
     signals_out = np.vstack((ux, vx, ax, signvx, Y)).T
     return signals_out
 
 def create_feature_dictionary(signals_dictionary, path_names):
     """
+    Creates a dictionary of features for the DNN model from the input signals. 
+        The features are displacement, velocity, acceleration, signum of velocity, and target value.
+
+    Args:
+        signals_dictionary (dict): Dictionary of input signals to create features for the DNN model (see preprocess_data for the signal format)
+        path_names (dict): Dictionary of file paths
+
+    Outputs:
+        feature_dictionary (dict): Dictionary of selected input signals for the DNN model split into training, validation, and testing sets
+
     """
     # Prepare data for training
     signals_numpy = preprocess_data.dictionary_to_numpy(signals_dictionary)
@@ -64,30 +107,22 @@ def create_feature_dictionary(signals_dictionary, path_names):
 
 
 class DeepNeuralNetwork(nn.Module):
-    """ Class that defines the neural network. This class is customizable in the sense that it takes input_size, output_size and
-     hidden_neurons and activation function as input so basically one can customize the whole network based on these parameters.
-
+    """ 
+    Class to create a deep neural network using PyTorch  
+    
     Args:
-        input_size                 - the number of input features you want to pass to the neural network.
-                                     Example: 5
+        input_size (int): Number of input features
+        output_size (int): Number of output features
+        hidden_neurons (int): Number of neurons in each hidden layer
+        hidden_layers (int): Number of hidden layers
+        activation (str): Activation function to use in hidden layers
+        dropout_prob (float): Dropout probability for dropout layers
 
-
-        output_size                - the size of the prediction, note that this network is designed to have a linear layer in the end. This
-                                      is a concious choice based on the problem statement
-                                      Example: 1
-
-        hidden_neurons             - this is an array, stating the neurons in each hidden layer of the neural network.
-                                     Example: [30, 50, 100, 80, 40, 10], so this states that the first hidden layer has 30 neurons, second has 50 and so on.
-
-        activation                 - this states the non linearity we want to introduce between each layer, as stated before the final activation is always linear.
-                                     this is just between layers.
-                                     Example: 'relu', 'sigmoid'
-
-    Outputs: It will initialize a CustomDeepNeuralNetwork object for you
+    Outputs: It will initialize a DeepNeuralNetwork object for you
 
     """
     def __init__(self, input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob = 0.2):
-        super().__init__()
+        super(DeepNeuralNetwork).__init__()
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
         self.layers = []
