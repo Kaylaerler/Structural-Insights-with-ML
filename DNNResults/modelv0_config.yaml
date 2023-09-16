@@ -1,7 +1,0 @@
-activation: leaky_relu
-batch_size: 500
-dropout_prob: 0.2
-hidden_layers: 1
-hidden_neurons: 2
-learning_rate: 0.0001
-num_epochs: 2

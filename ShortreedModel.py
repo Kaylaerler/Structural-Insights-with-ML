@@ -1,31 +1,36 @@
-# References and Licensing
 """
-Code functions written by Kayla Erler updated 5/22/2023
+Library Name: ShortreedModel
+Author: Kayla Erler
+Version: 1.0.0
+Date: 10/15/2023
+License: GNU
 
-All code based on that written for the seismic response modification device (https://se.ucsd.edu/facilities/laboratory-listing/srmd)
-based on the work conducted in:
-[Shortreed et al. (2001)](https://royalsocietypublishing.org/doi/10.1098/rsta.2001.0875) "Characterization and testing of the Caltrans Seismic Response Modification Device Test System". Phil. #Trans. R. Soc. A.359: 1829–1850
+Description:
+-----------
+ShortreedModel is a collection of useful functions to create the prediction for horizontal forces of the SRMD machine 
+                based on the empirical prediction developed by Shortreed et al. (2001).
 
-[Ozcelick et al. (2008)](http://jaguar.ucsd.edu/publications/refereed_journals/Ozcelik_Luco_Conte_Trombetti_Restrepo_EESD_2008.pdf) "Experimental Characterization, modeling and identification of the NEES-UCSD shake table mechanical systetm". Eathquake Engineering and Structural Dynamics, vol. 37, pp. 243-264, 2008
+                [Shortreed et al. (2001)](https://royalsocietypublishing.org/doi/10.1098/rsta.2001.0875) 
+                "Characterization and testing of the Caltrans Seismic Response Modification Device Test System". 
+                Phil. #Trans. R. Soc. A.359: 1829–1850
+Usage:
+------
+import ShortreedModel 
 
-Citation and Licensing:
-[Rathje et al. (2017)](https://doi.org/10.1061/(ASCE)NH.1527-6996.0000246) "DesignSafe: New Cyberinfrastructure for Natural Hazards Engineering". ASCE: Natural Hazards Review / Volume 18 Issue 3 - August 2017
+# Example Usage
+result = Shortreed.some_function(arg1, arg2)
 
-This software is distributed under the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.html).
 """
 
-
-import math as m
+# Open source modules available in python
 import numpy as np
-import pandas as pd
-import os
 
-# default is set to accept imperial units only
+
 # default is set to accept imperial units only
 def mach_frict(vel, OutriggerMeanForce, CompForce, ActualTareWt = 114, LiftPressure = 1300, dof = 0): 
     """mach_frict is a function translated directly from the Caltrans SRMD postprocessing protocol (original code in MatLab). It calculates the correction for friction forces only. 
     
-    Inputs: 
+    Args: 
         vel                - velocity array for the specified degree of freedom. The default is in the X-Direction
         OutriggerMeanForce - array of the mean over the 4 outriggers force readings
         CompForce          - array of total compression force mearsured over time defined as the Compression Force fbk channel
@@ -33,7 +38,7 @@ def mach_frict(vel, OutriggerMeanForce, CompForce, ActualTareWt = 114, LiftPress
         dof                - specifies the dof for the test run 0:5 denoting X, Y, Z, Roll, Pitch and Yaw (default 0=X/horizontal)
         ActualTareWt       - Effective weight of the empty table. (Default value set to that in the original protocol)
         
-    Outputs:
+    Returns:
         FrictionValue - Scalar value used to compute friction forces
     """
     
@@ -91,7 +96,17 @@ def mach_frict(vel, OutriggerMeanForce, CompForce, ActualTareWt = 114, LiftPress
 def Horizontal_Forces(FrictionValue, velocity, acceleration, weight):
     """" Function takes the inputs of the model and returns the predicted forces based on 
     friction and inertia forces. Friction calculated using mach_friction, weight comes from log files or 
-    user defined."""
+    user defined.
+    
+    Args:
+        FrictionValue (float): value of friction calculated from mach_friction
+        velocity (array): array of velocity from log file
+        acceleration (array): array of acceleration from log file
+        weight (float): weight of the table
+        
+    Returns:
+        horizontal_force (array): array of predicted horizontal forces
+    """
     friction_force = FrictionValue*np.sign(velocity)
     inertia = weight*acceleration
     horizontal_force = friction_force+inertia
@@ -99,6 +114,17 @@ def Horizontal_Forces(FrictionValue, velocity, acceleration, weight):
 
 def predict(signals, weight = 114):
     """
+    Function takes the input of the signals array and returns the predicted horizontal forces based on
+    the empirical model developed by Shortreed et al. (2001). The default weight is set to the weight of the
+    SRMD table.
+
+    Args:
+        signals (array): array of signals from the log file
+        weight (float, optional): weight of the table. Defaults to 114.
+
+    Returns:
+        horizontal_force_prediction (array): array of predicted horizontal forces
+
     """
     vel = signals[:,2]
     acceleration = signals[:,3]
