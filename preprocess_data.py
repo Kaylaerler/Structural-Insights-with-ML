@@ -28,6 +28,24 @@ from scipy.signal import find_peaks
 import pickle
 
 def signal_preprocessing(directory, dpath, file):
+    """ 
+    Preprocesses the signals from the test data to be used for training the models. This includes applying a Savitzky-Golay filter 
+    to the signals to obtain velocity and acceleration, and applying a lowpass filter to the acceleration signal to remove high 
+    frequency noise. The cutoff frequency for the lowpass filter is determined by the peak frequency of the FFT of the displacement 
+    signal. The cutoff frequency is multiplied by 30 to ensure that the cutoff frequency is sufficiently high to remove high 
+    frequency noise. The cutoff frequency is also set to a minimum of 0.1 Hz to ensure that the cutoff frequency is not too low for 
+    regular tests and triangular tests that have a tendency to provide low frequency for filtering.
+
+
+    Args:
+        directory (str): path to the test data
+        dpath (str): path to the test data directory
+        file (str): name of the test data file
+
+    Returns:
+        signals (numpy.ndarray): Preprocessed signals
+        labels (numpy.ndarray): Labels for the signals
+    """
     
     ####   extract data  
     data_open    = open(directory) # open data and store data
@@ -143,6 +161,22 @@ def signal_preprocessing(directory, dpath, file):
 
 def ETdata_to_dictionary():
     """ 
+    Extracts data from the provided data files and stores them in a dictionary for use in the models.
+    The data is extracted from the following files:
+        dataW.txt
+        dataK.txt
+        dataH2.txt
+        dataH1.txt
+        data3.txt
+        data2.txt
+        data1.txt
+
+    Args:
+        None
+
+    Returns:
+        signals_dictionary (dict): Dictionary of all input signals with the following structure:
+            signals_dictionary = {0: {'data': signals, 'test': data_folds[i]+file, 'labels': labels}
     """                        
     signals_dictionary = {} # initialize signals dictionary
     Mpath      = os.getcwd()
@@ -164,6 +198,15 @@ def ETdata_to_dictionary():
 
 def dictionary_to_numpy(signals_dictionary):
     """
+    Converts the dictionary of signals to a numpy 2D array where each test run is stacked on the previous.
+    This procedure is followed instead of using a 3D array to avoid issues with the varying number of samples 
+    in each test run.
+
+    Args:
+        signals_dictionary (dict): Dictionary of all input signals
+
+    Returns:
+        signals_numpy (numpy.ndarray): Numpy array of all input signals 
     """
     signals_numpy = signals_dictionary[0]['data']
     for i in range(1,len(signals_dictionary)):
@@ -172,22 +215,32 @@ def dictionary_to_numpy(signals_dictionary):
 
 def load_data_set(preprocessed_data_directory, save = True, load = True):
     """ 
+    Loads the data from the provided data files and stores them in a dictionary for use in the models.
+    This is the primary function to be called from outside this module.
+    
+    Args:
+        preprocessed_data_directory (str): Path to the directory containing the preprocessed data
+        save (bool): Whether to save the data to a file
+        load (bool): Whether to load the data from a file
+
+    Returns:
+        signals_dictionary (dict): Dictionary of all input signals
     """           
     if os.path.exists(preprocessed_data_directory +'/signals_data.pkl') and load:
         print("Loading Stored Data")
         signals_dictionary = np.load(preprocessed_data_directory+'/signals_data.pkl', allow_pickle = True)
     else:
         print("Extracting Data from Individual Folders")
-        signals_dictionary = ETdata_to_dictionary(preprocessed_data_directory)
-    
-    # save data if desired
-    signal_file = preprocessed_data_directory + '/signals_data.pkl'
-    if save:
-        if not os.path.exists(preprocessed_data_directory):
+        signals_dictionary = ETdata_to_dictionary()
+        
+        # save data if desired
+        signal_file = preprocessed_data_directory + '/signals_data.pkl'
+        if save:
             os.mkdir(preprocessed_data_directory)
-        with open(signal_file, 'wb') as fp:
-            pickle.dump(signals_dictionary, fp)
-            print('dictionary saved successfully to file:', signal_file)
+            with open(signal_file, 'wb') as fp:
+                pickle.dump(signals_dictionary, fp)
+                print('dictionary saved successfully to file:', signal_file)
+                
     return signals_dictionary
 
 def z_score_normalize(X, norm_params = None, treat_disp_different = False):

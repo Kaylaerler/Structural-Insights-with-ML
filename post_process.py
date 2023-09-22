@@ -19,10 +19,10 @@ result = post_process.some_function(arg1, arg2)
 """
 # modules created for this project
 import ShortreedModel
+import preprocess_data
 
 # Open source modules available in python
 import numpy as np
-import preprocess_data
 import matplotlib.pyplot as plt
 import sklearn as skl
 

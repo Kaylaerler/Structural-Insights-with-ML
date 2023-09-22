@@ -59,7 +59,7 @@ def create_features(alpha, signals):
     X = np.vstack((a1,a2,a3,a4,a5,a6)).T
     return X, Y, feature_names 
 
-def train(alpha, signals_library, number_features = 0):
+def train(alpha, signals_dictionary, number_features = 0):
     """"The sklearn implementation of Linear Regression fits a model with the input features and outputs 
         the training and testing metrics. Additional feature selection can be implemented if the user 
         believes not all features are significant to the model or that they are overly correlated. 
@@ -82,7 +82,7 @@ def train(alpha, signals_library, number_features = 0):
         selected_feature_indices - indices for selected features if feature selection is desired
                                    default reserves all model features
         """
-    signals_numpy = preprocess_data.library_to_numpy(signals_library)
+    signals_numpy = preprocess_data.dictionary_to_numpy(signals_dictionary)
     X, Y, feature_names = create_features(alpha, signals_numpy)
     X_norm, X_norm_params = preprocess_data.z_score_normalize(X)
     y_norm, y_norm_params = preprocess_data.z_score_normalize(Y)
@@ -120,13 +120,13 @@ def train(alpha, signals_library, number_features = 0):
     return MSE_test, R2_test, MSE_train, R2_train, simple_reg, selected_feature_indices, X_norm_params, y_norm_params 
 
 
-def fit_exponential(num_pts, signals_library):
+def fit_exponential(num_pts, signals_dictionary):
     """ function takes the exponential terms of the model and creates the input features from the input signals 
     and stacks the data into a numpy array, X for the input features and Y for the target.
 
     Args:
         num_pts - (int) number of points to evaluate the exponential term over
-        signals_library - (pandas dataframe) library of signals
+        signals_dictionary - (pandas dataframe) dictionary of signals
 
     Outputs:
         alpha_optimal - (float) optimal exponential term
@@ -135,7 +135,7 @@ def fit_exponential(num_pts, signals_library):
     alpha_range = np.linspace(0.2,1,num = num_pts)
     MSE = np.empty(np.shape(alpha_range))
     for i in range(0, len(alpha_range)):
-        MSE[i], _, _, _, _, _, _, _ = train(alpha_range[i], signals_library, number_features=0)
+        MSE[i], _, _, _, _, _, _, _ = train(alpha_range[i], signals_dictionary, number_features=0)
 
     alpha_optimal = alpha_range[MSE == np.min(MSE)]
     alpha_optimal = alpha_optimal[0]

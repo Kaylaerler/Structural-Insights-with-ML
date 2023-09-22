@@ -1,0 +1,22 @@
+# Hyperparameter tuning configuration file
+
+# Number of neurons to be used in each hidden layer
+hidden_neurons: [1, 2]
+
+# Number of hidden layers to be used in the network
+hidden_layers: [1, 2] 
+
+# Type of non-linear activation function to be used for all layers
+activation: ['leaky_relu']
+
+# The learning rate to be used for training.
+learning_rate: [0.001]
+
+# Number of training samples per batch to be passed to network
+batch_size: [512]
+
+# Number of epochs to train the model
+num_epochs: [2]
+
+# drop out probability
+dropout_prob: [0.1]

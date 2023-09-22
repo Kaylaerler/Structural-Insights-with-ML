@@ -8,13 +8,13 @@ hidden_layers: 1
 activation: 'relu'
 
 # The learning rate to be used for training.
-learning_rate: 0.01
+learning_rate: 0.001
 
 # Number of training samples per batch to be passed to network
 batch_size: 512
 
 # Number of epochs to train the model
-num_epochs: 50
+num_epochs: 10000
 
 # dropout probability to control neurons in the hidden layers
 dropout_prob: 0.1

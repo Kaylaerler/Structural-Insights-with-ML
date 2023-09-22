@@ -3,5 +3,5 @@ batch_size: 512
 dropout_prob: 0.1
 hidden_layers: 1
 hidden_neurons: 2
-learning_rate: 0.01
-num_epochs: 50
+learning_rate: 0.001
+num_epochs: 100

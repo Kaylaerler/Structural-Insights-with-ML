@@ -1,0 +1,4 @@
+hidden_neurons,hidden_layers,activation,learning_rate,batch_size,num_epochs,dropout_prob,val_score
+2,2,leaky_relu,0.001,512,2,0.1,0.6925423325598341
+1,1,leaky_relu,0.001,512,2,0.1,0.6622625553725651
+2,1,leaky_relu,0.001,512,2,0.1,0.8918471058516204

@@ -46,7 +46,7 @@ import torch
 import torch.nn as nn
 from torchinfo import summary
 
-def create_features(signals):
+def create_features(signals, augment = False):
     """  
     Creates features for the DNN model from the input signals. The features are displacement, velocity, acceleration, signum of velocity, and target value.
     
@@ -57,11 +57,15 @@ def create_features(signals):
         signals_out (numpy.ndarray): Selected input signals for the DNN model
         
     """
-    ux  = signals[:,1] # displacement
-    vx  = signals[:,2] # velocity
-    ax  = signals[:,3] # accleration
+    if augment:
+        data_aug = 4 # number of data points per time step
+    else:
+        data_aug = 1
+    ux  = signals[::data_aug,1] # displacement
+    vx  = signals[::data_aug,2] # velocity
+    ax  = signals[::data_aug,3] # accleration
     signvx = np.sign(vx) # signum of velocity (1 if positive, -1 if negative)
-    Y   = signals[:,-1] # target value (horizontal force)
+    Y   = signals[::data_aug,-1] # target value (horizontal force)
     
     signals_out = np.vstack((ux, vx, ax, signvx, Y)).T
     return signals_out
@@ -81,7 +85,7 @@ def create_feature_dictionary(signals_dictionary, path_names):
     """
     # Prepare data for training
     signals_numpy = preprocess_data.dictionary_to_numpy(signals_dictionary)
-    signals = create_features(signals_numpy)
+    signals = create_features(signals_numpy, augment=True)
     X_norm, X_norm_params = preprocess_data.z_score_normalize(signals[:,:-1])
     y_norm, y_norm_params = preprocess_data.z_score_normalize(signals[:,-1])
     norm_params = X_norm_params, y_norm_params
@@ -103,8 +107,37 @@ def create_feature_dictionary(signals_dictionary, path_names):
             pickle.dump(norm_params, fp)
     return feature_dictionary
 
+def create_user_feature_dictionary(X,y, path_names):
+    """
+    Alternative function to "create_feature_dictionary" that allows all other DNN functions to be usable for a user defined dataset.  
+        Creates a dictionary of features for the DNN model from the input signals.
+    Args:
+        X (numpy.ndarray): Matrix of input features with columns representing features and rows representing examples
+        y (numpy.ndarray): Target values for the DNN model with rows representing examples
+    Outputs:
+        feature_dictionary (dict): Dictionary of selected input signals for the DNN model split into training, validation, and testing sets
+    """
+    # Prepare data for training
+    X_norm, X_norm_params = preprocess_data.z_score_normalize(X) # normalize input features
+    y_norm, y_norm_params = preprocess_data.z_score_normalize(y) # normalize target values
+    norm_params = X_norm_params, y_norm_params
+    X_train_val, X_test, y_train_val, y_test = train_test_split(X_norm, y_norm, test_size=0.33, random_state=42)
+    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.33, random_state=42)
+    feature_dictionary = {'X_train': X_train, 
+                          'X_val': X_val, 
+                          'X_test': X_test, 
+                          'y_train': y_train, 
+                          'y_val': y_val, 
+                          'y_test': y_test,
+                          'norm_params': norm_params}
+    
 
-
+    if path_names['save_results']:
+        if not os.path.exists(path_names['results']):
+            os.mkdir(path_names['results'])
+        with open(path_names['norm_params'], 'wb') as fp:
+            pickle.dump(norm_params, fp)
+    return feature_dictionary
 
 class DeepNeuralNetwork(nn.Module):
     """ 
@@ -122,7 +155,7 @@ class DeepNeuralNetwork(nn.Module):
 
     """
     def __init__(self, input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob = 0.2):
-        super(DeepNeuralNetwork).__init__()
+        super().__init__()
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
         self.layers = []
@@ -205,7 +238,8 @@ def test_model(model, X_test, y_test = None):
     Returns:
         test_predictions (numpy.ndarray): Testing predictions
         r2_test (float): R-squared value for test data   
-    """     
+    """ 
+    model.eval()    
     test_tensor = torch.tensor(X_test, dtype=torch.float32)
     with torch.no_grad():
         test_predictions = model(test_tensor)
@@ -247,10 +281,10 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         print('Running on:', device)
     if device == "cpu":
         train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
-        val_loader   = DataLoader(DataPrep(features['X_val'],   features['y_val']),   batch_size, shuffle=True, num_workers = -1)
     else:
         train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
-        val_loader   = DataLoader(DataPrep(features['X_val'],   features['y_val']),   batch_size, shuffle=True)
+    X_val_tensor = torch.tensor(features['X_val'], dtype=torch.float32)
+    y_val_tensor = torch.tensor(features['y_val'], dtype=torch.float32)
 
     input_size  = np.shape(features['X_train'])[1]
     output_size = 1
@@ -263,7 +297,8 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
     epoch_train_loss = []
     epoch_val_loss = []
     for epoch in range(num_epochs):
-        mini_train_loss = []
+        batches_run = 0
+        train_loss = 0
         model.train()
         for inputs, target in train_loader:
             optimizer.zero_grad()  # Clear the gradients
@@ -272,18 +307,18 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
             loss = criterion(outputs, target)  # Compute the loss
             loss.backward()  # Backward pass
             optimizer.step()  # Update the weights
-            mini_train_loss.append(loss.item())
+            train_loss += loss.item()
+            batches_run += 1
 
-        mini_val_loss = []
+        train_loss /= batches_run # average total loss by number of batches
         model.eval()
-        for inputs, target in val_loader:
-            outputs = model(inputs)  # Forward pass
+        with torch.no_grad():
+            outputs = model(X_val_tensor)
             outputs = outputs.squeeze()
-            loss = criterion(outputs, target)  # Compute the loss
-            mini_val_loss.append(loss.item())
+            val_loss = criterion(outputs, y_val_tensor)  # Compute the loss
                 
-        epoch_train_loss.append(np.mean(mini_train_loss))
-        epoch_val_loss.append(np.mean(mini_val_loss))
+        epoch_train_loss.append(train_loss)
+        epoch_val_loss.append(val_loss.item())
 
         if training_output == 1:
             print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_train_loss[epoch]}")
@@ -310,61 +345,74 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         print("Finished Training")
         if path_names['save_results']:
             torch.save(model.state_dict(), path_names['saved_model'])
+            # add test score key to hyperparameter dictionary
+            hyperparameters["test_score"] = float(test_r2)
             yaml.dump(hyperparameters, open(path_names['saved_hypers'], 'w'))
     return model, train_r2, val_r2, test_r2
 
 
-def random_search(param_grid, features, path_names, search_space_ratio):
+def random_search(features, param_grid, path_names, search_space_ratio):
     """
     Perform random grid search on hyperparameters and save optimum hyperparameters to pyaml configurable file
     as well as output to a csv with all hyperparameter combinations and their respective test scores.
 
     Args:
         param_grid (dict)         : dictionary of hyperparameters to search over
-        features (dict)           : dictionary of features for train, val and testing
+        features (dict)           : dictionary of features for train, val, and testing
         path_names (dict)         : dictionary of file paths
-        search_space_ratio (float): ratio of hyperparameter combinations to search over
+        search_space_ratio (float): ratio of hyperparameter combinations to search over (0 to 1)
 
     Returns:
         best_model (model)        : trained model with optimum hyperparameters
     """
     
-     # Generate all possible combinations of hyperparameters
+    # Generate all possible combinations of hyperparameters
     param_combinations = list(ParameterGrid(param_grid))
-    random_param_combinations = np.random.choice(len(param_combinations), int(len(param_combinations)*search_space_ratio), replace=False)
+
+    # Randomly select a subset of hyperparameter combinations to search over
+    random_param_index = np.random.choice(len(param_combinations), int(len(param_combinations)*search_space_ratio), replace=False)
+    print(f'{len(random_param_index)} hyper combination out of {len(param_combinations)} will be searched over')
+    random_param_combinations = [param_combinations[i] for i in random_param_index]
 
     # Perform grid search over the randomly selected hyperparameter combinations
     val_r2 = []
     for params in range(len(random_param_combinations)):    
-        _, _, r2_val, _ = train_model(features, param_combinations[params], path_names, training_output = 3)
+        _, _, r2_val, _ = train_model(features, random_param_combinations[params], path_names, training_output = 3)
         val_r2.append(r2_val)
-        print(f"Test R2 score for hyperparameter combination {params+1}/{len(param_combinations)}: {r2_val}")
-        print(f"Hyperparameters: {param_combinations[params]}")
+        print(f"Validation R2 score for hyperparameter combination {params+1}/{len(random_param_combinations)}: {r2_val}")
     best_score_index = np.argmax(val_r2)
 
+    print('-------------------------------------------')
+    print("best hyperparameters found to be:")
+    print(random_param_combinations[best_score_index])
+    print('-------------------------------------------')
+
     # Save trained best model and hyperparameters
-    tuned_parameters = param_combinations[best_score_index]
-    best_model, _, _, test_r2 = train_model(features, tuned_parameters, path_names)
+    tuned_parameters = random_param_combinations[best_score_index]
+    best_model, _, _, _ = train_model(features, tuned_parameters, path_names)
+
+    # add validation score to hyperparameter dictionary 
+    for i in range(len(random_param_combinations)):
+        random_param_combinations[i]["val_score"] = float(val_r2[i])
+
+    # if "test_score" is a key in random_param_combinations remove it
+    for i in range(len(random_param_combinations)):
+        if "test_score" in random_param_combinations[i].keys():
+            random_param_combinations[i].pop("test_score")
 
     # save hyperparameter search to file with test scores
-    for i, entry in enumerate(param_combinations):
-        entry["test_score"] = test_r2[i]
     with open(path_names['grid_results'], "w", newline="") as csvfile: # Save data to CSV file
         fieldnames = list(param_grid.keys())
-        fieldnames.append("test_score")
+        fieldnames.append("val_score")
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()  # Write header
-        for entry in param_combinations:
+        for entry in random_param_combinations:
             writer.writerow(entry)
 
     print(f"Data saved to {path_names['grid_results']}")
-    print("optimum hyperparameters found to be:")
-    print(param_combinations[best_score_index])
-    print(f'With an r2 test score of {test_r2[best_score_index]}')
-
     return best_model
 
-def initiate_saved_model(hyper_path, model_path, features):
+def initiate_pretrained_network(features, hyper_path, model_path):
     """
     Load saved model and hyperparameters
     
@@ -384,6 +432,7 @@ def initiate_saved_model(hyper_path, model_path, features):
     activation     = hyperparameters['activation']
     model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation)
     model.load_state_dict(torch.load(model_path))
+    print("Loaded saved model from file: ", model_path)
     return model
 
 def predict(signals, norm_params, model):
