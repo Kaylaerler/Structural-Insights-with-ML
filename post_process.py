@@ -190,6 +190,8 @@ def plot_signals(test_number, preprocessed_data_directory = 'preprocessed_data')
         axs.grid()
         i += 1
 
+    plt.show()
+
 def lgmodel_denorm_params(bias, model_params, norm_params, y_norm_params, selected_feature_indices):
     """
     Returns the model coefficients in real units if the model has been z-score normalized. 
