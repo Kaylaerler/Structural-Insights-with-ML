@@ -46,7 +46,7 @@ import torch
 import torch.nn as nn
 from torchinfo import summary
 
-def create_features(signals, augment = False):
+def create_features(signals):
     """  
     Creates features for the DNN model from the input signals. The features are displacement, velocity, acceleration, signum of velocity, and target value.
     
@@ -57,20 +57,17 @@ def create_features(signals, augment = False):
         signals_out (numpy.ndarray): Selected input signals for the DNN model
         
     """
-    if augment:
-        data_aug = 4 # number of data points per time step
-    else:
-        data_aug = 1
-    ux  = signals[::data_aug,1] # displacement
-    vx  = signals[::data_aug,2] # velocity
-    ax  = signals[::data_aug,3] # accleration
+    
+    ux  = signals[:,1] # displacement
+    vx  = signals[:,2] # velocity
+    ax  = signals[:,3] # accleration
     signvx = np.sign(vx) # signum of velocity (1 if positive, -1 if negative)
-    Y   = signals[::data_aug,-1] # target value (horizontal force)
+    Y   = signals[:,-1] # target value (horizontal force)
     
     signals_out = np.vstack((ux, vx, ax, signvx, Y)).T
     return signals_out
 
-def create_feature_dictionary(signals_dictionary, path_names):
+def create_feature_dictionary(signals_training, signals_validation, singals_testing, path_names):
     """
     Creates a dictionary of features for the DNN model from the input signals. 
         The features are displacement, velocity, acceleration, signum of velocity, and target value.
@@ -84,13 +81,21 @@ def create_feature_dictionary(signals_dictionary, path_names):
 
     """
     # Prepare data for training
-    signals_numpy = preprocess_data.dictionary_to_numpy(signals_dictionary)
-    signals = create_features(signals_numpy, augment=True)
-    X_norm, X_norm_params = preprocess_data.z_score_normalize(signals[:,:-1])
-    y_norm, y_norm_params = preprocess_data.z_score_normalize(signals[:,-1])
+    signals_training_numpy   = preprocess_data.dictionary_to_numpy(signals_training)
+    signals_validation_numpy = preprocess_data.dictionary_to_numpy(signals_validation)
+    signals_testing_numpy    = preprocess_data.dictionary_to_numpy(singals_testing)
+
+    signals_tr = create_features(signals_training_numpy)
+    signals_val = create_features(signals_validation_numpy)
+    signals_te = create_features(signals_testing_numpy)
+    X_train, X_norm_params = preprocess_data.z_score_normalize(signals_tr[:,:-1])
+    y_train, y_norm_params = preprocess_data.z_score_normalize(signals_tr[:,-1])
     norm_params = X_norm_params, y_norm_params
-    X_train_val, X_test, y_train_val, y_test = train_test_split(X_norm, y_norm, test_size=0.33, random_state=42)
-    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.33, random_state=42)
+    X_val, _ = preprocess_data.z_score_normalize(signals_val[:,:-1], X_norm_params)
+    y_val, _ = preprocess_data.z_score_normalize(signals_val[:,-1], y_norm_params)
+    X_test, _ = preprocess_data.z_score_normalize(signals_te[:,:-1], X_norm_params)
+    y_test, _ = preprocess_data.z_score_normalize(signals_te[:,-1], y_norm_params)
+    
     feature_dictionary = {'X_train': X_train, 
                           'X_val': X_val, 
                           'X_test': X_test, 
@@ -98,14 +103,13 @@ def create_feature_dictionary(signals_dictionary, path_names):
                           'y_val': y_val, 
                           'y_test': y_test,
                           'norm_params': norm_params}
-    
 
     if path_names['save_results']:
         if not os.path.exists(path_names['results']):
             os.mkdir(path_names['results'])
         with open(path_names['norm_params'], 'wb') as fp:
             pickle.dump(norm_params, fp)
-    return feature_dictionary
+    return feature_dictionary, norm_params
 
 def create_user_feature_dictionary(X,y, path_names):
     """
@@ -325,7 +329,7 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
 
             
     # Plot the loss
-    if training_output == 2:
+    if training_output == 2 or training_output == 1:
         plt.plot(epoch_train_loss, label = 'Training Loss')
         plt.plot(epoch_val_loss, label = 'Validation Loss')
         plt.xlabel('Epoch')

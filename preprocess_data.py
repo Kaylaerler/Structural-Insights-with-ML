@@ -112,7 +112,7 @@ def signal_preprocessing(directory, dpath, file):
         max_peak= max(max(np.where(disp_FFT==np.max(disp_FFT[indices]))))
     
     f_peak      = np.abs(f[max_peak])
-    fc          = f_peak*30     # cutoff frequency   [Hz]
+    fc          = f_peak*5     # cutoff frequency   [Hz]
     
     # specify minimum for regular tests and triangular that have a tendency to provide low frequency for filtering
     fc_min = 0.1
@@ -135,6 +135,7 @@ def signal_preprocessing(directory, dpath, file):
     wp              = fc/(Fs/2)    # Normalized passband edge frequency w.r.t. Nyquist rate
     b_filt          = signal.firwin(numtaps=200, cutoff=wp, window='hamming', pass_zero="lowpass")
     acceleration    = signal.filtfilt(b_filt, 1, ax_filt_sgolay)
+    hor_force       = signal.filtfilt(b_filt, 1, all_signals[-1])
 
     # Concatenate signals desired for models
     OutriggerMeanForce  = np.mean(all_signals[2:6], axis = 0)
@@ -144,17 +145,17 @@ def signal_preprocessing(directory, dpath, file):
 
     #   0         1           2               3             4                      
     # time, displacement, velocity, accceleration, Outrigger total force, 
-    #          5                   6                 7                 8
-    # Actuator force, Outrigger mean force,  compression force, horizontal force
+    #          5                   6                 7                 8                   9
+    # Actuator force, Outrigger mean force,  compression force, raw horizontal force, horizontal force
     signals = np.vstack((time, all_signals[1,:], velocity.T, acceleration.T, 
                          OutriggerTotalForce.T, ActuatorForce, OutriggerMeanForce.T, 
-                         all_signals[-2], all_signals[-1]))
+                        all_signals[-1], all_signals[-2], hor_force))
     
     labels = {}
     names  = ['Time', 'Displacement', 'Velocity', 'Acceleration', 
              'Outrigger Total Force', 'Actuator Force', 'Outrigger Mean Force', 
-             'Compression Force', 'Horizontal Force']
-    units = [' [s]', ' [in]', ' [in/s]',' [g]', ' [tons]', ' [tons]',' [tons]', ' [tons]',' [tons]']
+             'Compression Force', 'Raw Horizontal Force', 'Horizontal Force']
+    units = [' [s]', ' [in]', ' [in/s]',' [g]', ' [tons]', ' [tons]',' [tons]', ' [tons]',' [tons]',' [tons]']
     for i in range(signals.shape[0]):
         labels[i] = {'name': names[i], 'units': units[i]}
     return signals.T, labels
@@ -178,7 +179,11 @@ def ETdata_to_dictionary():
         signals_dictionary (dict): Dictionary of all input signals with the following structure:
             signals_dictionary = {0: {'data': signals, 'test': data_folds[i]+file, 'labels': labels}
     """                        
-    signals_dictionary = {} # initialize signals dictionary
+    signals_training   = {} # initialize signals dictionary
+    signals_validation = {} # initialize signals dictionary
+    signals_testing    = {} # initialize signals dictionary
+    signals_val_test   = {} # initialize signals dictionary
+    signals_all        = {} # initialize signals dictionary
     Mpath      = os.getcwd()
     Mdata_fold = '/ET_Runs/'             # folder containing data
     data_folds = ['dataW/','dataK/','dataH2/','dataH1/','data3/','data2/','data1/'] # subfolders containing data from testing routines
@@ -192,9 +197,14 @@ def ETdata_to_dictionary():
                 f_ext      = dpath+file  # create full extension for chosen file
                 # obtain preprocessed signals from the file extension needed for linear regression
                 signals, labels = signal_preprocessing(f_ext, dpath, file)
-                signals_dictionary[k] = {'data' : signals, 'test' : data_folds[i]+file, 'labels': labels} 
+                data_points = signals.shape[0]
+                signals_all[k] = {'data' : signals, 'test' : data_folds[i]+file, 'labels': labels}
+                signals_training[k]   = {'data' : signals[0:int(data_points*0.5),:],                     'test' : data_folds[i]+file, 'labels': labels} 
+                signals_testing[k]    = {'data' : signals[int(data_points*0.5):int(data_points*0.75),:], 'test' : data_folds[i]+file, 'labels': labels}
+                signals_validation[k] = {'data' : signals[int(data_points*0.75):,:],                     'test' : data_folds[i]+file, 'labels': labels}
+                signals_val_test[k]   = {'data' : signals[int(data_points*0.5):,:],                      'test' : data_folds[i]+file, 'labels': labels}
                 k = k+1    
-    return signals_dictionary
+    return signals_training, signals_validation, signals_testing, signals_val_test, signals_all
 
 def dictionary_to_numpy(signals_dictionary):
     """
@@ -226,22 +236,38 @@ def load_data_set(preprocessed_data_directory, save = True, load = True):
     Returns:
         signals_dictionary (dict): Dictionary of all input signals
     """           
-    if os.path.exists(preprocessed_data_directory +'/signals_data.pkl') and load:
+    signal_tfile = preprocessed_data_directory + '/signals_training.pkl'
+    signal_vfile = preprocessed_data_directory + '/signals_validation.pkl'
+    signal_tefile = preprocessed_data_directory + '/signals_testing.pkl'
+    signal_vtfile = preprocessed_data_directory + '/signals_validation_testing.pkl'
+    signal_afile    = preprocessed_data_directory + '/signals_data.pkl'
+    if os.path.exists(preprocessed_data_directory) and load:
         print("Loading Stored Data")
-        signals_dictionary = np.load(preprocessed_data_directory+'/signals_data.pkl', allow_pickle = True)
+        signals_training   = np.load(signal_tfile, allow_pickle = True)
+        signals_validation = np.load(signal_vfile, allow_pickle = True)
+        signals_testing    = np.load(signal_tefile, allow_pickle = True)
+        signals_val_test   = np.load(signal_vtfile, allow_pickle = True)
+        signals_all        = np.load(signal_afile, allow_pickle = True)
     else:
         print("Extracting Data from Individual Folders")
-        signals_dictionary = ETdata_to_dictionary()
-        
+        signals_training, signals_validation, signals_testing, signals_val_test, signals_all = ETdata_to_dictionary()
         # save data if desired
-        signal_file = preprocessed_data_directory + '/signals_data.pkl'
         if save:
-            os.mkdir(preprocessed_data_directory)
-            with open(signal_file, 'wb') as fp:
-                pickle.dump(signals_dictionary, fp)
-                print('dictionary saved successfully to file:', signal_file)
+            if not os.path.exists(preprocessed_data_directory):
+                os.mkdir(preprocessed_data_directory)
+            with open(signal_tfile, 'wb') as fp:
+                pickle.dump(signals_training, fp)
+            with open(signal_vfile, 'wb') as fp:
+                pickle.dump(signals_validation, fp)
+            with open(signal_tefile, 'wb') as fp:
+                pickle.dump(signals_testing, fp)
+            with open(signal_vtfile, 'wb') as fp:
+                pickle.dump(signals_val_test, fp)
+            with open(signal_afile, 'wb') as fp:
+                pickle.dump(signals_all, fp)
+                print('dictionary saved successfully to file:', preprocessed_data_directory)
                 
-    return signals_dictionary
+    return signals_training, signals_validation, signals_testing, signals_val_test, signals_all
 
 def z_score_normalize(X, norm_params = None, treat_disp_different = False):
     """

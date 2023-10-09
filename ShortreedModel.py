@@ -134,3 +134,18 @@ def predict(signals, weight = 114):
     horizontal_force_prediction = Horizontal_Forces(FrictionValue, vel, acceleration, weight)
     return horizontal_force_prediction
 
+def evaluate(signals_dictionary):
+    from sklearn.metrics import mean_squared_error, r2_score 
+    Y = []
+    Y_pred = []
+    for i in range(len(signals_dictionary)):
+        signals = signals_dictionary[i]['data']
+        y = signals[:,-1]
+        y_pred = predict(signals)
+
+        Y = np.append(Y, y)
+        Y_pred = np.append(Y_pred, y_pred)
+    
+    MSE = mean_squared_error(Y,Y_pred)
+    R2 = r2_score(Y,Y_pred)
+    return MSE, R2

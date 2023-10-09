@@ -46,9 +46,9 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
     """         
     empirical_output = {}
     model_output= {}
-    signals_dictionary = preprocess_data.load_data_set(saved_data_directory)
-    for i in range(len(signals_dictionary)):     # cycle through all data folders
-        signals = signals_dictionary[i]['data']
+    _, _, _, signals_test, _ = preprocess_data.load_data_set(saved_data_directory)
+    for i in range(len(signals_test)):     # cycle through all data folders
+        signals = signals_test[i]['data']
         empirical_prediction = ShortreedModel.predict(signals)
         if model_type == "LR":
             import LR_functions
@@ -109,6 +109,8 @@ def model_per_run_scoring(empirical_output, model_output, model_name):
         Ax_median.append(model_output[i]['Ax_median'])
         MSE_empirical.append(empirical_output[i]['MSE']) 
 
+
+    main_font = 17
     run_number = np.arange(0,len(MSE))
     norm_Vx, _ = preprocess_data.z_score_normalize(np.array(Vx_median))
     norm_Ax, _ = preprocess_data.z_score_normalize(np.array(Ax_median))
@@ -118,16 +120,20 @@ def model_per_run_scoring(empirical_output, model_output, model_name):
     axs.scatter(run_number, norm_Vx, marker = 'o', color = 'r', label = 'Normalized Median Velocity')
     axs.plot(run_number, MSE, label = model_name, color = 'k')
     axs.plot(run_number, MSE_empirical, label = 'Empirical Model', color = 'g')
-    axs.set_xlabel('Run Number')
-    axs.set_ylabel('MSE')
-    axs.set_title('Model Per Run Scoring', fontsize = 10)
-    axs.legend()
-    plt.setp(ax, xticks = run_number[0:-1:2], xticklabels = run_number[0:-1:2])
+    axs.set_xlabel('Run Number', fontsize = main_font)
+    axs.set_ylabel('MSE', fontsize = main_font)
+    #axs.set_title('Model Per Run Scoring', fontsize = title_font)
+    axs.legend(fontsize = main_font)
+    plt.setp(ax, xticks = run_number[0:87:2], xticklabels = run_number[0:87:2])
+    plt.xticks(fontsize = main_font)
+    plt.yticks(fontsize = main_font)
+    axs.set_ylim([-1,5])
+    axs.set_xlim([0,87])
     axs.grid(which = 'both', axis = 'both')
-    axs.text(0.51, 0.5, model_name+' Average MSE= %.3f'%(np.mean(MSE)), horizontalalignment='center', verticalalignment='center', transform=axs.transAxes, color = 'k', fontsize = 10)
-    axs.text(0.5, 0.45, 'Empirical Average MSE= %.3f'%(np.mean(MSE_empirical)), horizontalalignment='center', verticalalignment='center', transform=axs.transAxes, color = 'g', fontsize = 10)
+    axs.text(0.40 , 0.6, model_name+' Average MSE= %.3f'%(np.mean(MSE)), horizontalalignment='center', verticalalignment='center', transform=axs.transAxes, color = 'k', fontsize = main_font)
+    axs.text(0.40, 0.45, 'Empirical Average MSE= %.3f'%(np.mean(MSE_empirical)), horizontalalignment='center', verticalalignment='center', transform=axs.transAxes, color = 'g', fontsize = main_font)
 
-def plot_prediction(empirical_prediction, model_prediction, signals, model_name, run_name):
+def plot_prediction(empirical_prediction, model_prediction, signals, model_name, run_name, metric = False):
     """
     plot_prediction is a function that takes in the time, signals, empirical prediction, and model prediction and plots
     the target and predictions for a given run.
@@ -142,93 +148,90 @@ def plot_prediction(empirical_prediction, model_prediction, signals, model_name,
     Returns:
         plot of target and predictions for a given run
     """
+    if metric:
+        disp = 25.4*(signals[:,1] - np.mean(signals[:,1]))
+        target = 8.896*signals[:,-1]
+        raw_target = 8.896*signals[:,-3]
+        empirical = 8.896*empirical_prediction
+        model = 8.896*model_prediction
+    else:
+        disp = signals[:,1] - np.mean(signals[:,1])
+        target = signals[:,-1]
+        empirical = empirical_prediction
+        model = model_prediction
     # target and prediction plot
+    target_color = 'b'
+    raw_color = 'c'
+    empirical_color = 'g'
+    model_color = 'k'
     _, ax = plt.subplots(nrows=1,ncols=2, figsize=(15,5))
     axs = ax[0]
-    axs.plot(signals[:,1], signals[:,-1], label = 'Target')
-    axs.plot(signals[:,1], empirical_prediction, label = 'Empirical Model')
-    axs.plot(signals[:,1], model_prediction, label = model_name)
-    axs.set_ylabel('Force [tons]', fontsize = 14)
-    axs.set_xlabel('Displacement [in]', fontsize = 14)
+    axs.plot(disp, target, label = 'Target', color = target_color)
+    axs.plot(disp, empirical, label = 'Empirical Model', color = empirical_color)
+    axs.plot(disp, model, label = model_name, color = model_color)
+    if metric:
+        axs.set_ylabel('Force [kN]', fontsize = 14)
+        axs.set_xlabel('Displacement [mm]', fontsize = 14)
+    else:
+        axs.set_ylabel('Force [tons]', fontsize = 14)
+        axs.set_xlabel('Displacement [in]', fontsize = 14)
+    
     axs.set_title('Example Prediction:' + run_name, fontsize=14)
     axs.legend()
     axs.grid()
 
     axs = ax[1]
-    axs.plot(signals[:,0], signals[:,-1], label = 'Target')
-    axs.plot(signals[:,0], empirical_prediction, label = 'Empirical Model')
-    axs.plot(signals[:,0], model_prediction, label = model_name)
-    axs.set_ylabel('Force [tons]', fontsize = 14)
-    axs.set_xlabel('Timne [s]', fontsize = 14)
+    axs.plot(signals[:,0], raw_target, label = 'Raw Data', color = raw_color)
+    axs.plot(signals[:,0], target, label = 'Target', color = target_color)
+    axs.plot(signals[:,0], empirical, label = 'Empirical Model', color = empirical_color)
+    axs.plot(signals[:,0], model, label = model_name, color = model_color)
+    if metric:
+        axs.set_ylabel('Force [kN]', fontsize = 14)
+    else:
+        axs.set_ylabel('Force [tons]', fontsize = 14)
+    axs.set_xlabel('Time [s]', fontsize = 14)
     axs.set_title('Example Prediction:' + run_name, fontsize=14)
     axs.legend()
     axs.grid()
 
-def plot_signals(test_number, preprocessed_data_directory = 'preprocessed_data'):
+def plot_signals(test_number, preprocessed_data_directory = 'preprocessed_data', metric = False):
     """ 
     plot_signals is a function that takes in the test number and plots the signals for that test.
 
     Args:
         test_number : (int) number of the test to plot
         preprocessed_data_directory : (str) directory where the preprocessed data is saved
+        metric : (bool) if true, the units of the signals will be converted to metric units
 
     Returns:
         plot of the signals for the given test
     """
-    plot_signals = [1,2,3,4,5,8]
-    signals_dictionary =  preprocess_data.load_data_set(preprocessed_data_directory)
+    plot_signals = [1,2,3,4,5,9]
+    _, _, _, _, signals_dictionary =  preprocess_data.load_data_set(preprocessed_data_directory)
     _, ax   = plt.subplots(nrows=len(plot_signals),ncols=1, figsize=(10,10))
     signals = signals_dictionary[test_number]['data']
     labels  = signals_dictionary[test_number]['labels']
     i = 0
+    factor = 1
     for sig in plot_signals:
+        if metric:
+            if 'in' in labels[sig]['units']:
+                ylabel = str(labels[sig]['units']).replace('in','mm')
+                factor = 25.4
+            elif 'ton' in labels[sig]['units']:
+                ylabel = str(labels[sig]['units']).replace('tons','kN ')
+                factor = 8.896
+            else:
+                ylabel = labels[sig]['units']
+        else:
+            ylabel = labels[sig]['units']
         axs = ax[i]
-        axs.plot(signals[:,0],signals[:,sig], label = labels[sig]['name'])
+        if sig == plot_signals[-1]:
+            axs.plot(signals[:,0],factor*signals[:,7], label = 'Raw Signal')
+        axs.plot(signals[:,0],factor*signals[:,sig], label = labels[sig]['name'])
         axs.set_xlabel(labels[0]['name']+labels[0]['units'])
-        axs.set_ylabel(labels[sig]['units'])
+        axs.set_ylabel(ylabel)
         axs.legend()
         axs.grid()
         i += 1
-
-    plt.show()
-
-def lgmodel_denorm_params(bias, model_params, norm_params, y_norm_params, selected_feature_indices):
-    """
-    Returns the model coefficients in real units if the model has been z-score normalized. 
-
-    (y - μy)/σy = a0(x0 - μ0) / σ0 + a1(x1 - μ1) / σ1 ... + b
-        where 
-            μ = mean of x
-            σ = standard deviation of x
-            a = parameter model solution of normalized features
-            b = bias of normalized feature solution
-
-    y = X.*a*σy./σ - σy [a.*μ/σ - b] + μy
-
-    
-    therefore:
-    b_real = - σy [a.*μ/σ - b] + μy
-    a_real = σy*a./σ 
-    *note 
-        .* signifies dot product
-        *  signifies element-wise multiplication of a vector
-        when no subscript exists in formula, vector notation is implied
-
-    Args:
-        bias : (float) bias of the model
-        model_params : (np.array) model parameters
-        norm_params : (tuple) contains the mean and standard deviation used to normalize the data
-        y_norm_params : (tuple) contains the mean and standard deviation used to normalize the target
-        selected_feature_indices : (list) contains the indices of the features that were selected by the feature selection algorithm
         
-    Returns:
-        bias_real : (float) bias of the model in real units
-        a_real : (np.array) model parameters in real units
-    """
-    u, sd = norm_params
-    u = u[selected_feature_indices]
-    sd = sd[selected_feature_indices]
-    uy, sdy = y_norm_params
-    bias_real = -sdy*(np.dot(model_params/sd,u)-bias)+uy
-    a_real = model_params*sdy/sd
-    return bias_real, a_real
