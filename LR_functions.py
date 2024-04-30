@@ -112,7 +112,7 @@ def train(alpha, signals_train, signals_test, number_features = 0, normalize = F
         print("Selected features:", selected_feature_names)
 
     #Linear Regression Model 
-    simple_reg   = LinearRegression(fit_intercept = True, n_jobs = -1, positive = False)    # initiate model object
+    simple_reg   = LinearRegression(fit_intercept = True, n_jobs = -1, positive = True)    # initiate model object
     simple_reg.fit(X_train,y_train)             # fit the estimator
     Y_test_pred  = simple_reg.predict(X_test)   # model prediction on testing data
     Y_train_pred=simple_reg.predict(X_train)    # model prediction on training data
@@ -138,7 +138,7 @@ def fit_exponential(num_pts, signals_train, signals_test):
         alpha_optimal - (float) optimal exponential term
     """
     # parametric analysis to fit exponential terms
-    alpha_range = np.linspace(0.1,0.5,num = num_pts)
+    alpha_range = np.linspace(0,1,num = num_pts)
     MSE = np.empty(np.shape(alpha_range))
     for i in range(0, len(alpha_range)):
         MSE[i], _, _, _, _, _, _, _ = train(alpha_range[i], signals_train, signals_test, number_features=0)

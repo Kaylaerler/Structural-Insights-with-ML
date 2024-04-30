@@ -157,6 +157,7 @@ def plot_prediction(empirical_prediction, model_prediction, signals, model_name,
     else:
         disp = signals[:,1] - np.mean(signals[:,1])
         target = signals[:,-1]
+        raw_target = signals[:,-3]
         empirical = empirical_prediction
         model = model_prediction
     # target and prediction plot
