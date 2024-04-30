@@ -163,11 +163,12 @@ class DeepNeuralNetwork(nn.Module):
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
         self.layers = []
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         for i in range(len(layers)- 1):
-            layer = nn.Linear(layers[i], layers[i+1])     # Creating the hidden layers from the array given as input
-            layer_activation = self.get_activation(activation)
-            dropout = nn.Dropout(dropout_prob)
+            layer = nn.Linear(layers[i], layers[i+1]).to(device)     # Creating the hidden layers from the array given as input
+            layer_activation = self.get_activation(activation).to(device)
+            dropout = nn.Dropout(dropout_prob).to(device)
             self.layers.extend([layer, layer_activation, dropout])
 
         # Remove the last dropout layer and activation so that final layer is linear
@@ -213,12 +214,8 @@ class DataPrep(Dataset):
     """
     def __init__(self, X, y):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        if device.type == 'cuda':
-            self.inputs = torch.tensor(X, dtype=torch.float32).cuda()  # Load inputs as a tensor and move to CUDA
-            self.targets = torch.tensor(y, dtype=torch.float32).cuda()  # Load targets as a tensor and move to CUDA
-        else:
-            self.inputs = torch.tensor(X, dtype=torch.float32)  # Load inputs as a tensor and move to CUDA
-            self.targets = torch.tensor(y, dtype=torch.float32)
+        self.inputs = torch.tensor(X, dtype=torch.float32).to(device)  # Load inputs as a tensor and move to CUDA
+        self.targets = torch.tensor(y, dtype=torch.float32).to(device)  # Load targets as a tensor and move to CUDA
 
     def __len__(self):
         return len(self.targets)
@@ -244,7 +241,7 @@ def test_model(model, X_test, y_test = None):
         r2_test (float): R-squared value for test data   
     """ 
     model.eval()    
-    test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
     with torch.no_grad():
         test_predictions = model(test_tensor)
     test_predictions = test_predictions.numpy()
@@ -278,6 +275,7 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
     learning_rate = hyperparameters['learning_rate']
     batch_size = hyperparameters['batch_size']
     num_epochs = hyperparameters['num_epochs']
+    print_epoch = int(num_epochs/10)
     dropout_prob = hyperparameters['dropout_prob']
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -287,16 +285,21 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
     else:
         train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
-    X_val_tensor = torch.tensor(features['X_val'], dtype=torch.float32)
-    y_val_tensor = torch.tensor(features['y_val'], dtype=torch.float32)
 
+    if device.type == 'cuda': 
+        X_val_tensor = torch.tensor(features['X_val'], dtype=torch.float32).cuda()
+        y_val_tensor = torch.tensor(features['y_val'], dtype=torch.float32).cuda()
+    else:
+        X_val_tensor = torch.tensor(features['X_val'], dtype=torch.float32)
+        y_val_tensor = torch.tensor(features['y_val'], dtype=torch.float32)
+        
     input_size  = np.shape(features['X_train'])[1]
     output_size = 1
     model = DeepNeuralNetwork(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob)
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     model.train()  # Set the model in training mode
-    model.to(device)
 
     epoch_train_loss = []
     epoch_val_loss = []
@@ -325,8 +328,8 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         epoch_val_loss.append(val_loss.item())
 
         if training_output == 1:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_train_loss[epoch]}")
-
+            if epoch % print_epoch == 0:
+                print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {epoch_train_loss[epoch]}")
             
     # Plot the loss
     if training_output == 2 or training_output == 1:
