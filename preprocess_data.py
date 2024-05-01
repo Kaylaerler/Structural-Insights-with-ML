@@ -26,6 +26,7 @@ from scipy import signal
 from scipy.fft import fft
 from scipy.signal import find_peaks
 import pickle
+import torch
 
 def signal_preprocessing(directory, dpath, file):
     """ 
@@ -223,6 +224,7 @@ def dictionary_to_numpy(signals_dictionary):
         signals_numpy = np.append(signals_numpy, signals_dictionary[i]['data'], axis = 0)
     return signals_numpy
 
+
 def load_data_set(preprocessed_data_directory, save = True, load = True):
     """ 
     Loads the data from the provided data files and stores them in a dictionary for use in the models.
@@ -269,7 +271,7 @@ def load_data_set(preprocessed_data_directory, save = True, load = True):
                 
     return signals_training, signals_validation, signals_testing, signals_val_test, signals_all
 
-def z_score_normalize(X, norm_params = None, treat_disp_different = False):
+def z_score_normalize(X, norm_params = None):
     """
     Performs z-score normalization on X. 
 
@@ -293,21 +295,18 @@ def z_score_normalize(X, norm_params = None, treat_disp_different = False):
             Transformed dataset with mean 0 and stdev 1
             Computed statistics (mean and stdev) for the dataset to undo z-scoring.
     """
-    if treat_disp_different:
-        disp = X[:,0]
-        sd_disp = np.std(disp)
-        disp_norm = disp/sd_disp
-
+    # assess if X is a tensor or numpy array
     if norm_params is None:
-        u = np.mean(a=X, axis=0)
-        sd = np.std(a=X, axis=0)
+        if isinstance(X, torch.Tensor):
+            u = torch.mean(X, dim=(0,1)) # mean of each feature
+            sd = torch.std(X, dim=(0,1)) # standard deviation of each feature
+        else:
+            u = np.mean(a=X, axis=0)
+            sd = np.std(a=X, axis=0)
     else:
         u, sd = norm_params
         
     X_norm = (X - u) / sd
-    if treat_disp_different:
-        X_norm[:,0] = disp_norm
-        u[0] = 0
     return X_norm, (u, sd)
 
 def z_score_normalize_inverse(X, norm_params):
