@@ -45,6 +45,7 @@ from torch.utils.data import Dataset
 import torch
 import torch.nn as nn
 from torchinfo import summary
+from torchmetrics.regression import R2Score
 
 def create_features(signals):
     """  
@@ -63,12 +64,11 @@ def create_features(signals):
     ax  = signals[:,3] # accleration
     signvx = np.sign(vx) # signum of velocity (1 if positive, -1 if negative)
     f   = signals[:,-1]  # horizontal force recording
-    Y   = np.reshape(f, np.size(f))[0] # target value (horizontal force)
+    signals_out = np.vstack((ux, vx, ax, signvx, f)).T
     
-    signals_out = np.vstack((ux, vx, ax, signvx, Y)).T
     return signals_out
 
-def dictionary_to_tensor(signals_dictionary):
+def dictionary_to_tensor(signals_dictionary, n_features = 4, n_outputs = 1):
     """
     Converts the dictionary of signals to a 3D tensor array where each test run is stacked on the previous.
     This procedure is followed instead of using a 3D array to avoid issues with the varying number of samples 
@@ -92,18 +92,24 @@ def dictionary_to_tensor(signals_dictionary):
          
     """
     # find longest run to create a zero padded tensor
-    h = 0
-    for i in range(len(signals_dictionary)):
-        h = max((signals_dictionary[i]['data'].shape[0],h))
+    i = 0
+    for ii in range(len(signals_dictionary)):
+        i = max((signals_dictionary[ii]['data'].shape[0],i))
+
+    j = len(signals_dictionary)
+    kx = n_features
+    ky = n_outputs
 
     # initiate pytorch tensor for input signals
-    tensor_X = torch.zeros(h, len(signals_dictionary), signals_dictionary[0]['data'].shape[1]-1)
-    tensor_Y = torch.zeros(h, len(signals_dictionary), 1)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    tensor_X = torch.zeros((i, j, kx), dtype = torch.float32).to(device)
+    tensor_Y = torch.zeros((i, j, ky), dtype = torch.float32).to(device)
+    
     for i in range(len(signals_dictionary)):
         signals = signals_dictionary[i]['data']
         features = create_features(signals)
-        tensor_X[0:features.shape[0],i,:] = torch.tensor(features[:,0:-1])
-        tensor_Y[0:features.shape[0],i,0] = torch.tensor(features[:,-1])
+        tensor_X[0:features.shape[0],i,:] = torch.tensor(features[:,0:-1], dtype = torch.float32).to(device)
+        tensor_Y[0:features.shape[0],i,0] = torch.tensor(features[:,-1], dtype = torch.float32).to(device)
     return tensor_X, tensor_Y
 
 def create_feature_dictionary(signals_training, signals_validation, singals_testing, path_names):
@@ -147,6 +153,8 @@ def create_feature_dictionary(signals_training, signals_validation, singals_test
             pickle.dump(norm_params, fp)
     return feature_dictionary, norm_params
 
+
+#################################### NEED TO Modify this function to allow for user defined dataset ####################################
 def create_user_feature_dictionary(X,y, path_names):
     """
     Alternative function to "create_feature_dictionary" that allows all other DNN functions to be usable for a user defined dataset.  
@@ -178,23 +186,19 @@ def create_user_feature_dictionary(X,y, path_names):
         with open(path_names['norm_params'], 'wb') as fp:
             pickle.dump(norm_params, fp)
     return feature_dictionary
+###################################################################################################################################
+
 
 class LSTM(nn.Module):
     """ 
     Class to create a deep neural network using PyTorch  
     
     Args:
-        input_size (int): Number of input features
-        output_size (int): Number of output features
-        hidden_neurons (int): Number of neurons in each hidden layer
-        hidden_layers (int): Number of hidden layers
-        activation (str): Activation function to use in hidden layers
-        dropout_prob (float): Dropout probability for dropout layers
 
-    Outputs: It will initialize a DeepNeuralNetwork object for you
+    Outputs: LSTM object initiated
 
     """
-    def __init__(self, input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob = 0.2):
+    def __init__(self):
         super().__init__()
         layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
         layers = np.append(layers, output_size).astype(int)
@@ -249,17 +253,22 @@ class DataPrep(Dataset):
     Outputs: It will initialize a DataPrep object for you
     """
     def __init__(self, X, y):
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.inputs = torch.tensor(X, dtype=torch.float32).to(device)  # Load inputs as a tensor and move to CUDA
-        self.targets = torch.tensor(y, dtype=torch.float32).to(device)  # Load targets as a tensor and move to CUDA
+        self.X = X
+        self.y = y
 
     def __len__(self):
-        return len(self.targets)
+        return self.X.shape[0]
 
     def __getitem__(self, index):
-        x = self.inputs[index]
-        y = self.targets[index]
+        x = self.X[index]
+        y = self.y[index]
         return x, y
+    
+def customized_loss(output, target):
+    mse = torch.nn.MSELoss()
+    output1 = output[:, :, 0:1]
+    target1 = target[:, :, 0:1]
+    return 0.5 * torch.maximum(mse(output1, target1))
     
 def test_model(model, X_test, y_test = None):
     """
@@ -277,15 +286,13 @@ def test_model(model, X_test, y_test = None):
         r2_test (float): R-squared value for test data   
     """ 
     model.eval()    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    test_tensor = torch.tensor(X_test, dtype=torch.float32).to(device)
     with torch.no_grad():
-        test_predictions = model(test_tensor)
-    test_predictions = test_predictions.numpy()
+        test_predictions = model(X_test)
     if y_test is None:
        r2_test = None
     else:
-        r2_test = r2_score(y_test, test_predictions)
+        r2score = R2Score()
+        r2_test = r2score(y_test, test_predictions)
     return test_predictions, r2_test
 
 def train_model(features, hyperparameters, path_names, training_output = 2):
@@ -322,18 +329,10 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
     else:
         train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
-
-    if device.type == 'cuda': 
-        X_val_tensor = torch.tensor(features['X_val'], dtype=torch.float32).cuda()
-        y_val_tensor = torch.tensor(features['y_val'], dtype=torch.float32).cuda()
-    else:
-        X_val_tensor = torch.tensor(features['X_val'], dtype=torch.float32)
-        y_val_tensor = torch.tensor(features['y_val'], dtype=torch.float32)
         
     input_size  = np.shape(features['X_train'])[1]
     output_size = 1
-    model = LSTM(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob)
-    model = model.to(device)
+    model = LSTM(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     model.train()  # Set the model in training mode
