@@ -198,33 +198,37 @@ class LSTM(nn.Module):
     Outputs: LSTM object initiated
 
     """
-    def __init__(self):
+    def __init__(self, hyper_params):
         super().__init__()
-        layers = np.append(input_size, hidden_neurons*np.ones((hidden_layers,1)))
-        layers = np.append(layers, output_size).astype(int)
-        self.layers = []
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # assign hyperparameters
+        input_size = hyper_params['input_size']
+        self.hidden_size = hyper_params['hidden_size']
+        self.num_layers = hyper_params['num_layers']
+        output_size = hyper_params['output_size']
+        
+        self.leakrelu = torch.nn.LeakyReLU()
+        self.lstm1 = torch.nn.LSTM(input_size, self.hidden_size, self.num_layers, batch_first=True)
 
-        for i in range(len(layers)- 1):
-            layer = nn.Linear(layers[i], layers[i+1]).to(device)     # Creating the hidden layers from the array given as input
-            layer_activation = self.get_activation(activation).to(device)
-            dropout = nn.Dropout(dropout_prob).to(device)
-            self.layers.extend([layer, layer_activation, dropout])
-
-        # Remove the last dropout layer and activation so that final layer is linear
-        self.layers.pop()
-        self.layers.pop()
-
-        self.network = nn.Sequential(*self.layers)
-
-        # Initialize weights with mean=0 and std=0.1
-        for layer in self.network:
-            if isinstance(layer, nn.Linear):
-                nn.init.normal_(layer.weight, mean=0, std=0.1)
-                nn.init.constant_(layer.bias, 0)  # Initialize biases to zero
-
+        # linear layer: the output's shape is (batch, time, feature=hidden size)
+        # so the input size of the linear layer is equal to the hidden size
+        self.fc1 = torch.nn.Linear(self.hidden_size, output_size)
     def forward(self, x):
-        return self.network(x)
+        # initialize the hidden state
+        # Remark: the shape of h0 and c0 should keep the number of layers at first.
+        # This is compulsory even though I think it's not a good implementation...
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        a0 = torch.zeros(self.num_layers, x.shape[0], self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.shape[0], self.hidden_size).to(device)
+        
+        # forward propagate the input through the LSTM
+        out, (a, c) = self.lstm1(x, (a0, c0))
+
+        # leaky relu
+        out = self.leakrelu(out)
+
+        # fully connected layer
+        out = self.fc1(out)
+        return out
     
     # Defining all the activation function available for this class, one can add more if needed
     def get_activation(self, name):
@@ -295,7 +299,7 @@ def test_model(model, X_test, y_test = None):
         r2_test = r2score(y_test, test_predictions)
     return test_predictions, r2_test
 
-def train_model(features, hyperparameters, path_names, training_output = 2):
+def train_model(features, path_names, hyperparameters, trainer_info, training_output = 2):
     """
     Trains a PyTorch model using the given data, criterion, and optimizer.
 
@@ -313,29 +317,27 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         r2_train (float): R-squared value for train data
         r2_val   (float): R-squared value for validation data
     """
-    hidden_neurons = hyperparameters['hidden_neurons']
-    hidden_layers = hyperparameters['hidden_layers']
-    activation = hyperparameters['activation']
-    learning_rate = hyperparameters['learning_rate']
-    batch_size = hyperparameters['batch_size']
-    num_epochs = hyperparameters['num_epochs']
-    print_epoch = int(num_epochs/10)
-    dropout_prob = hyperparameters['dropout_prob']
+    learning_rate = trainer_info['lr0']
+    batch_size    = trainer_info['train_batch']
+    num_epochs    = trainer_info['epochs']
+    print_epoch = 1
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if training_output != 3:
         print('Running on:', device)
-    if device == "cpu":
-        train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
-    else:
-        train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
+    #if device == "cpu":
+    #    train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
+    #else:
+    #    train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
+    training_set = DataPrep(features['X_train'], features['y_train'])
+    train_loader = torch.utils.data.DataLoader(dataset=training_set, 
+                                               batch_size=trainer_info['train_batch'],
+                                               shuffle=True)
         
-    input_size  = np.shape(features['X_train'])[1]
-    output_size = 1
-    model = LSTM(input_size, output_size, hidden_neurons, hidden_layers, activation, dropout_prob).to(device)
+    model = LSTM(hyperparameters).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
-    model.train()  # Set the model in training mode
+    model.eval()  # Set the model in training mode
 
     epoch_train_loss = []
     epoch_val_loss = []
@@ -343,10 +345,9 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
         batches_run = 0
         train_loss = 0
         model.train()
-        for inputs, target in train_loader:
+        for i, (inputs, target) in enumerate(train_loader):
             optimizer.zero_grad()  # Clear the gradients
             outputs = model(inputs)  # Forward pass
-            outputs = outputs.squeeze()
             loss = criterion(outputs, target)  # Compute the loss
             loss.backward()  # Backward pass
             optimizer.step()  # Update the weights
@@ -354,14 +355,6 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
             batches_run += 1
 
         train_loss /= batches_run # average total loss by number of batches
-        model.eval()
-        with torch.no_grad():
-            outputs = model(X_val_tensor)
-            outputs = outputs.squeeze()
-            val_loss = criterion(outputs, y_val_tensor)  # Compute the loss
-                
-        epoch_train_loss.append(train_loss)
-        epoch_val_loss.append(val_loss.item())
 
         if training_output == 1:
             if epoch % print_epoch == 0:
@@ -370,28 +363,13 @@ def train_model(features, hyperparameters, path_names, training_output = 2):
     # Plot the loss
     if training_output == 2 or training_output == 1:
         plt.plot(epoch_train_loss, label = 'Training Loss')
-        plt.plot(epoch_val_loss, label = 'Validation Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
         plt.title('Training Loss')
         plt.legend()
         plt.show()    
 
-    _, train_r2 = test_model(model, features['X_train'], features['y_train'])
-    _, val_r2   = test_model(model, features['X_val'],   features['y_val'])
-    _, test_r2  = test_model(model, features['X_test'],  features['y_test'])
- 
-    if training_output != 3:
-        print(summary(model))
-        print("R-squared value (train):", train_r2)
-        print("R-squared value (test):",  test_r2)
-        print("Finished Training")
-        if path_names['save_results']:
-            torch.save(model.state_dict(), path_names['saved_model'])
-            # add test score key to hyperparameter dictionary
-            hyperparameters["test_score"] = float(test_r2)
-            yaml.dump(hyperparameters, open(path_names['saved_hypers'], 'w'))
-    return model, train_r2, val_r2, test_r2
+    return model
 
 
 def random_search(features, param_grid, path_names, search_space_ratio):
