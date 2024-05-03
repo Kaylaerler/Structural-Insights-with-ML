@@ -14,7 +14,7 @@ pip install -r requirements.txt
 
 And you're done!
 
-## Usage:c
+## Usage:
 The notebooks deploying code functions for the project have the naming convention of 'Case', number and type of algorithm. The underlying files being run by these notebooks are either the general function files used for pre and post processing or algorithm specific function files. The notebooks represent an example case of these algorithms for real world data and are not the only or necessarily the best methods for performing predictions with the data set. Please see the Jupyter notebooks for more details on implementation of the developed algorithms.
 
 ### Jupyter Notebooks and their corresponding python function files 
