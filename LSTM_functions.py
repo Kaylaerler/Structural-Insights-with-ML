@@ -206,22 +206,20 @@ class LSTM(nn.Module):
         self.num_layers = hyper_params['num_layers']
         output_size = hyper_params['output_size']
         
+        self.lstm = torch.nn.LSTM(input_size, self.hidden_size, self.num_layers, batch_first=True)
         self.leakrelu = torch.nn.LeakyReLU()
-        self.lstm1 = torch.nn.LSTM(input_size, self.hidden_size, self.num_layers, batch_first=True)
 
         # linear layer: the output's shape is (batch, time, feature=hidden size)
         # so the input size of the linear layer is equal to the hidden size
         self.fc1 = torch.nn.Linear(self.hidden_size, output_size)
     def forward(self, x):
         # initialize the hidden state
-        # Remark: the shape of h0 and c0 should keep the number of layers at first.
-        # This is compulsory even though I think it's not a good implementation...
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        a0 = torch.zeros(self.num_layers, x.shape[0], self.hidden_size).to(device)
+        h0 = torch.zeros(self.num_layers, x.shape[0], self.hidden_size).to(device)
         c0 = torch.zeros(self.num_layers, x.shape[0], self.hidden_size).to(device)
         
         # forward propagate the input through the LSTM
-        out, (a, c) = self.lstm1(x, (a0, c0))
+        out, (a, c) = self.lstm(x, (h0, c0))
 
         # leaky relu
         out = self.leakrelu(out)
@@ -256,7 +254,10 @@ class DataPrep(Dataset):
     
     Outputs: It will initialize a DataPrep object for you
     """
-    def __init__(self, X, y):
+    def __init__(self, X, y, train_size = None):
+        if train_size is not None:
+            X = X[:train_size, :, :]
+            y = y[:train_size, :, :]
         self.X = X
         self.y = y
 
@@ -295,11 +296,13 @@ def test_model(model, X_test, y_test = None):
     if y_test is None:
        r2_test = None
     else:
+        y_test_pred = torch.reshape(test_predictions, (test_predictions.shape[0]*test_predictions.shape[1], 1))
+        y_test = torch.reshape(y_test, (y_test.shape[0]*y_test.shape[1], 1))
         r2score = R2Score()
-        r2_test = r2score(y_test, test_predictions)
+        r2_test = r2score(y_test_pred, y_test)
     return test_predictions, r2_test
 
-def train_model(features, path_names, hyperparameters, trainer_info, training_output = 2):
+def train_model(features, hyper_params, path_names, training_output = 2):
     """
     Trains a PyTorch model using the given data, criterion, and optimizer.
 
@@ -317,24 +320,20 @@ def train_model(features, path_names, hyperparameters, trainer_info, training_ou
         r2_train (float): R-squared value for train data
         r2_val   (float): R-squared value for validation data
     """
-    learning_rate = trainer_info['lr0']
-    batch_size    = trainer_info['train_batch']
-    num_epochs    = trainer_info['epochs']
+    learning_rate = hyper_params['lr0']
+    batch_size    = hyper_params['train_batch']
+    num_epochs    = hyper_params['epochs']
     print_epoch = 1
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if training_output != 3:
         print('Running on:', device)
-    #if device == "cpu":
-    #    train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True, num_workers = -1)
-    #else:
-    #    train_loader = DataLoader(DataPrep(features['X_train'], features['y_train']), batch_size, shuffle=True)
-    training_set = DataPrep(features['X_train'], features['y_train'])
+    training_set = DataPrep(features['X_train'], features['y_train'], hyper_params['train_size'])
     train_loader = torch.utils.data.DataLoader(dataset=training_set, 
-                                               batch_size=trainer_info['train_batch'],
+                                               batch_size=batch_size,
                                                shuffle=True)
         
-    model = LSTM(hyperparameters).to(device)
+    model = LSTM(hyper_params).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     model.eval()  # Set the model in training mode
@@ -355,6 +354,12 @@ def train_model(features, path_names, hyperparameters, trainer_info, training_ou
             batches_run += 1
 
         train_loss /= batches_run # average total loss by number of batches
+        with torch.no_grad():
+            val_predictions = model(features['X_val'])
+            val_loss = criterion(val_predictions, features['y_val'])
+
+        epoch_train_loss.append(train_loss)
+        epoch_val_loss.append(val_loss.item())
 
         if training_output == 1:
             if epoch % print_epoch == 0:
@@ -363,13 +368,29 @@ def train_model(features, path_names, hyperparameters, trainer_info, training_ou
     # Plot the loss
     if training_output == 2 or training_output == 1:
         plt.plot(epoch_train_loss, label = 'Training Loss')
+        plt.plot(epoch_val_loss, label = 'Validation Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
-        plt.title('Training Loss')
         plt.legend()
-        plt.show()    
+        plt.show() 
+        print(summary(model))   
 
-    return model
+    _, train_r2 = test_model(model, features['X_train'], features['y_train'])
+    _, val_r2   = test_model(model, features['X_val'],   features['y_val'])
+    _, test_r2  = test_model(model, features['X_test'],  features['y_test'])
+
+    if training_output != 3:
+        print(summary(model))
+        print("R-squared value (train):", train_r2)
+        print("R-squared value (test):",  test_r2)
+        print("Finished Training")
+        if path_names['save_results']:
+            torch.save(model.state_dict(), path_names['saved_model'])
+            # add test score key to hyperparameter dictionary
+            hyper_params["test_score"] = float(test_r2)
+            yaml.dump(hyper_params, open(path_names['saved_hypers'], 'w'))
+
+    return model, train_r2, val_r2, test_r2
 
 
 def random_search(features, param_grid, path_names, search_space_ratio):
@@ -445,13 +466,8 @@ def initiate_pretrained_network(features, hyper_path, model_path):
     Returns:
         model: trained network
     """
-    hyperparameters = yaml.load(open(hyper_path, 'r'), Loader=yaml.SafeLoader)
-    input_size = np.shape(features['X_test'])[1]
-    output_size = 1
-    hidden_neurons = hyperparameters['hidden_neurons']
-    hidden_layers  = hyperparameters['hidden_layers']
-    activation     = hyperparameters['activation']
-    model = LSTM(input_size, output_size, hidden_neurons, hidden_layers, activation)
+    hyper_params = yaml.load(open(hyper_path, 'r'), Loader=yaml.SafeLoader)
+    model = LSTM(hyper_params)
     model.load_state_dict(torch.load(model_path))
     print("Loaded saved model from file: ", model_path)
     return model
@@ -472,6 +488,7 @@ def predict(signals, norm_params, model):
     X_norm_params, y_norm_params = norm_params
     signals = create_features(signals)
     X_norm, _ = preprocess_data.z_score_normalize(signals[:,:-1], X_norm_params)
-    prediction_norm, _ = test_model(model, X_norm)
+    X_norm_reshape = torch.reshape(X_norm, (1, X_norm.shape[0], X_norm.shape[1]))
+    prediction_norm, _ = test_model(model, X_norm_reshape)
     prediction = preprocess_data.z_score_normalize_inverse(prediction_norm, y_norm_params)
     return prediction

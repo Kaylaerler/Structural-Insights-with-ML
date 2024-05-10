@@ -306,6 +306,10 @@ def z_score_normalize(X, norm_params = None):
     else:
         u, sd = norm_params
         
+    if isinstance(u, torch.Tensor) and not(isinstance(X, torch.Tensor)):
+        Z = torch.from_numpy(X)
+        X = Z.to(torch.float32)
+
     X_norm = (X - u) / sd
     return X_norm, (u, sd)
 

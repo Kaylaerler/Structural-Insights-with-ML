@@ -1,0 +1,9 @@
+epochs: 2
+hidden_size: 2
+input_size: 4
+lr0: 0.01
+num_layers: 2
+output_size: 1
+test_score: 0.001148998737335205
+train_batch: 1
+train_size: 5

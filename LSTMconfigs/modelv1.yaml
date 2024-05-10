@@ -1,0 +1,25 @@
+# Hyperparameter tuning configuration file
+
+# number of input features
+input_size: 4
+
+# number of hidden neurons
+hidden_size: 2
+
+# number of hidden layers
+num_layers: 2
+
+# number of output features
+output_size: 1
+
+# Number of epochs to train the model
+epochs: 2
+
+# number of points of time history to use for training
+train_size : 5
+
+# number of examples to use in a training batch
+train_batch: 1
+
+# initial learning rate
+lr0: 0.01

@@ -58,15 +58,21 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
             X_exp = X[:,selected_feature_indices]
             params = params.reshape(len(params), 1)
             prediction = np.matmul(X_exp, params) + bias
-        else:
+        elif model_type == "DNN":
             import DNN_functions
             prediction = DNN_functions.predict(signals, norm_params, model)
+        else:
+            import LSTM_functions
+            prediction = LSTM_functions.predict(signals, norm_params, model)
 
         # z-score normalize on a per run basis to have better comparison amongst runs for fit
         target, t_norm_params = preprocess_data.z_score_normalize(signals[:,-1].reshape(-1,1))
         predict_run_norm, _   = preprocess_data.z_score_normalize(prediction, t_norm_params)
         emp_run_norm, _       = preprocess_data.z_score_normalize(empirical_prediction, t_norm_params)
         
+        target = target.flatten()
+        predict_run_norm = predict_run_norm.flatten()
+        emp_run_norm = emp_run_norm.flatten()
         # scoring metrics
         MSE           = skl.metrics.mean_squared_error(target, predict_run_norm)
         MSE_empirical = skl.metrics.mean_squared_error(target, emp_run_norm)
@@ -74,7 +80,7 @@ def test_scores(model, model_type, saved_data_directory = 'preprocessed_data', n
         MAE_empirical = skl.metrics.median_absolute_error(target, emp_run_norm)
         Ax_Median     = np.median(np.abs(signals[:,3]))
         Vx_Median     = np.median(np.abs(signals[:,2]))
-        model_output[i] = {"prediction": prediction, 
+        model_output[i] = {"prediction": prediction.flatten(), 
                               'MSE': MSE,
                               'MAE': MAE,
                               'Ax_median': Ax_Median,
